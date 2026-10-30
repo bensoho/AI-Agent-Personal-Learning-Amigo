@@ -61,6 +61,7 @@ class QuizViewModel @Inject constructor(
             try {
                 val goal = settings.dailyGoal.first()
                 val questions = study.loadQuizQuestions(mode, topicId, goal)
+                    .map { it.copy(options = it.options.shuffled()) }
                 sessionId = if (questions.isEmpty()) null else study.startSession(mode)
                 shownAt = clock.millis()
                 _state.value = QuizUiState(loading = false, questions = questions)

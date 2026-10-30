@@ -28,11 +28,11 @@ fun ChoiceOptions(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        question.options.forEach { option ->
+        question.options.forEachIndexed { index, option ->
             val isSelected = option.id in selected
             val isCorrect = option.id in question.correctAnswer
             val container = when {
-                submitted && isCorrect -> MaterialTheme.colorScheme.primaryContainer
+                submitted && isCorrect -> MaterialTheme.colorScheme.secondaryContainer
                 submitted && isSelected -> MaterialTheme.colorScheme.errorContainer
                 isSelected -> MaterialTheme.colorScheme.primaryContainer
                 else -> MaterialTheme.colorScheme.surfaceContainerLow
@@ -63,7 +63,7 @@ fun ChoiceOptions(
                     } else {
                         RadioButton(selected = isSelected, onClick = null, enabled = !submitted)
                     }
-                    Text("${option.id}. ${option.text}", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(start = 8.dp))
+                    Text("${optionLabel(index)}. ${option.text}", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(start = 8.dp))
                 }
             }
         }

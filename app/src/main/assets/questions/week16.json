@@ -1,4 +1,50 @@
 {"schemaVersion": 1, "week": 16, "module": "Production", "topics": [
-  {"id": "pr_w16_plan", "name": "Final Project Planning", "description": "Scope, architecture and milestones."},
-  {"id": "pr_w16_review", "name": "Final Project Review", "description": "Reviewing the finished project."}
-], "questions": []}
+  {"id": "pr_w16_plan", "name": "Final Project Planning", "description": "Scope, architecture and milestones.", "notes": [
+    "## 项目规划",
+    "- 先写一页需求：用户是谁、要解决什么问题、成功标准如何衡量。",
+    "- 画出架构：入口 API、LangGraph 图（节点/边/state）、工具与数据源、持久化、观测。",
+    "- 里程碑：先做最小可用版本（单 agent + 1~2 个工具），再逐步加入 RAG、多 agent、人工审批。",
+    "- 同时准备评估数据集，从第一个版本开始记录基线分数。",
+    "- 明确不做什么，控制范围。"
+  ]},
+  {"id": "pr_w16_review", "name": "Final Project Review", "description": "Reviewing the finished project.", "notes": [
+    "## 项目复盘与验收清单",
+    "- 功能：核心场景可用，错误有友好提示。",
+    "- 质量：评估数据集分数达标，没有明显回归。",
+    "- 可观测：开启 trace，关键指标有看板和告警。",
+    "- 安全：密钥不入库，工具最小权限，高风险操作有人工确认。",
+    "- 可靠：超时、重试、限流和降级已配置。",
+    "- 文档：架构图、运行方式、已知限制和后续计划。"
+  ]}
+], "questions": [
+  {"id": "pr_w16_plan_q001", "topicId": "pr_w16_plan", "type": "SINGLE_CHOICE", "difficulty": "BEGINNER",
+    "title": "What should be defined first when planning the final project?",
+    "options": [{"id": "A", "text": "The user problem and the success criteria"}, {"id": "B", "text": "The number of agents"}, {"id": "C", "text": "The color of the UI"}, {"id": "D", "text": "The model with the most parameters"}],
+    "correctAnswer": ["A"], "explanation": "Without a clear problem and measurable success criteria you cannot decide on architecture or tell whether the project works.",
+    "tags": ["Planning"], "technology": "Production", "apiVersion": "v1"},
+  {"id": "pr_w16_plan_q002", "topicId": "pr_w16_plan", "type": "SINGLE_CHOICE", "difficulty": "BEGINNER",
+    "title": "Which build order is recommended for the project?",
+    "options": [{"id": "A", "text": "Start with a minimal single agent and a few tools, then add RAG, multi-agent or approvals as needed"}, {"id": "B", "text": "Start with a multi-agent system with every feature"}, {"id": "C", "text": "Build the UI first and the agent last"}, {"id": "D", "text": "Skip evaluation until launch"}],
+    "correctAnswer": ["A"], "explanation": "A small working version gives a baseline. Add complexity only when evaluation shows it is needed.",
+    "tags": ["Planning", "MVP"], "technology": "Production", "apiVersion": "v1"},
+  {"id": "pr_w16_plan_q003", "topicId": "pr_w16_plan", "type": "MULTIPLE_CHOICE", "difficulty": "INTERMEDIATE",
+    "title": "Which belong in the architecture plan of an agent project?",
+    "options": [{"id": "A", "text": "Graph design: nodes, edges and state"}, {"id": "B", "text": "Persistence such as a checkpointer"}, {"id": "C", "text": "Observability and tracing"}, {"id": "D", "text": "The app icon color"}],
+    "correctAnswer": ["A", "B", "C"], "explanation": "These shape correctness, scalability and operability of the agent.",
+    "tags": ["Planning", "Architecture"], "technology": "Production", "apiVersion": "v1"},
+  {"id": "pr_w16_review_q001", "topicId": "pr_w16_review", "type": "SINGLE_CHOICE", "difficulty": "INTERMEDIATE",
+    "title": "Which check best shows that a change did not make the agent worse?",
+    "options": [{"id": "A", "text": "Run the evaluation dataset and compare the scores with the baseline"}, {"id": "B", "text": "Try one example by hand"}, {"id": "C", "text": "Check that the code compiles"}, {"id": "D", "text": "Read the prompt again"}],
+    "correctAnswer": ["A"], "explanation": "Comparing scores over many examples catches regressions that a single manual try would miss.",
+    "tags": ["Review", "Evaluation"], "technology": "Production", "apiVersion": "v1"},
+  {"id": "pr_w16_review_q002", "topicId": "pr_w16_review", "type": "MULTIPLE_CHOICE", "difficulty": "INTERMEDIATE",
+    "title": "Which items belong on a pre-release security checklist?",
+    "options": [{"id": "A", "text": "Secrets are not stored in the repository"}, {"id": "B", "text": "Tools run with least privilege"}, {"id": "C", "text": "High-risk actions require human approval"}, {"id": "D", "text": "Full personal data is logged in every trace"}],
+    "correctAnswer": ["A", "B", "C"], "explanation": "Traces and logs should avoid secrets and personal data, not collect them.",
+    "tags": ["Review", "Security"], "technology": "Production", "apiVersion": "v1"},
+  {"id": "pr_w16_review_q003", "topicId": "pr_w16_review", "type": "SINGLE_CHOICE", "difficulty": "BEGINNER",
+    "title": "What is the best way to handle known limitations of the finished project?",
+    "options": [{"id": "A", "text": "Document them with a plan for follow-up work"}, {"id": "B", "text": "Hide them from users and teammates"}, {"id": "C", "text": "Remove the project documentation"}, {"id": "D", "text": "Wait until they cause an incident"}],
+    "correctAnswer": ["A"], "explanation": "Documented limitations set expectations and become the backlog for the next iteration.",
+    "tags": ["Review", "Documentation"], "technology": "Production", "apiVersion": "v1"}
+]}

@@ -23,7 +23,7 @@ fun AnswerExplanation(question: Question, isCorrect: Boolean, modifier: Modifier
                 if (isCorrect) "回答正确" else "回答错误",
                 style = MaterialTheme.typography.titleMedium,
             )
-            Text("正确答案：" + question.correctAnswer.sorted().joinToString(", "))
+            Text("正确答案：" + question.correctLabels().joinToString(", "))
             Text(question.explanation)
             val baseline = listOfNotNull(question.technology, question.apiVersion).joinToString(" ")
             if (baseline.isNotBlank()) {

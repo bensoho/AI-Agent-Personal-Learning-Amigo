@@ -1,4 +1,55 @@
 {"schemaVersion": 1, "week": 13, "module": "Production", "topics": [
-  {"id": "pr_w13_boundaries", "name": "Service Boundaries", "description": "Where the agent sits in a system."},
-  {"id": "pr_w13_reliability", "name": "Reliability", "description": "Retries, timeouts and fallbacks."}
-], "questions": []}
+  {"id": "pr_w13_boundaries", "name": "Service Boundaries", "description": "Where the agent sits in a system.", "notes": [
+    "## 服务边界",
+    "- 把 agent 作为一个有明确输入输出契约的服务，而不是散落在业务代码里的函数调用。",
+    "- 常见分层：API 网关/鉴权 → agent 服务（LangGraph）→ 工具和数据源 → 模型提供商。",
+    "- 客户端（Web/手机）只调用你的后端，模型 API Key 只保存在后端。",
+    "- 长任务使用异步执行：提交任务、返回任务 ID，再轮询或流式推送结果。",
+    "- 状态持久化到数据库（checkpointer），服务实例就可以无状态地水平扩展。"
+  ]},
+  {"id": "pr_w13_reliability", "name": "Reliability", "description": "Retries, timeouts and fallbacks.", "notes": [
+    "## 可靠性",
+    "- 超时：为每次模型和工具调用设置超时，避免请求挂起。",
+    "- 重试：对瞬时错误（429、5xx、网络错误）使用指数退避重试；对确定性错误（参数错误）不要重试。",
+    "- 幂等：会产生副作用的工具（下单、发邮件）需要幂等键，避免重试造成重复执行。",
+    "- 降级：主模型失败时切换备用模型，或返回缓存/兜底回答。",
+    "- 限流和预算：限制每个用户的调用频率，以及单次请求的最大 token 和循环次数。"
+  ]}
+], "questions": [
+  {"id": "pr_w13_boundaries_q001", "topicId": "pr_w13_boundaries", "type": "SINGLE_CHOICE", "difficulty": "BEGINNER",
+    "title": "A mobile app uses an LLM through your own service. Where should the LLM provider API key live?",
+    "options": [{"id": "A", "text": "On the backend only; the app calls your backend"}, {"id": "B", "text": "Inside the mobile app's resources"}, {"id": "C", "text": "In the app's local database"}, {"id": "D", "text": "In the README"}],
+    "correctAnswer": ["A"], "explanation": "Anything shipped inside an app can be extracted. The backend holds secrets and enforces authentication and limits.",
+    "tags": ["Architecture", "Security"], "technology": "Production", "apiVersion": "v1"},
+  {"id": "pr_w13_boundaries_q002", "topicId": "pr_w13_boundaries", "type": "SINGLE_CHOICE", "difficulty": "INTERMEDIATE",
+    "title": "Why persist agent state in a database-backed checkpointer in production?",
+    "options": [{"id": "A", "text": "Service instances stay stateless, so they can scale out and resume any thread"}, {"id": "B", "text": "It makes the model smarter"}, {"id": "C", "text": "It removes the need for authentication"}, {"id": "D", "text": "It reduces token usage to zero"}],
+    "correctAnswer": ["A"], "explanation": "With state outside the process, any instance can continue a conversation and restarts do not lose progress.",
+    "tags": ["Architecture", "Checkpointer"], "technology": "Production", "apiVersion": "v1"},
+  {"id": "pr_w13_boundaries_q003", "topicId": "pr_w13_boundaries", "type": "SINGLE_CHOICE", "difficulty": "INTERMEDIATE",
+    "title": "An agent task can take several minutes. Which API design is most appropriate?",
+    "options": [{"id": "A", "text": "Submit the task, return a task ID, then poll or stream the result"}, {"id": "B", "text": "Keep one HTTP request open with no timeout"}, {"id": "C", "text": "Ask the client to run the agent locally"}, {"id": "D", "text": "Drop the request if it takes longer than a second"}],
+    "correctAnswer": ["A"], "explanation": "An asynchronous job pattern avoids client and proxy timeouts and lets users see progress.",
+    "tags": ["Architecture", "Async"], "technology": "Production", "apiVersion": "v1"},
+  {"id": "pr_w13_reliability_q001", "topicId": "pr_w13_reliability", "type": "MULTIPLE_CHOICE", "difficulty": "INTERMEDIATE",
+    "title": "Which failures are good candidates for retry with exponential backoff?",
+    "options": [{"id": "A", "text": "HTTP 429 rate limit"}, {"id": "B", "text": "HTTP 503 service unavailable"}, {"id": "C", "text": "A transient network timeout"}, {"id": "D", "text": "A tool call with invalid arguments"}],
+    "correctAnswer": ["A", "B", "C"], "explanation": "Transient errors may succeed later. Deterministic errors such as invalid arguments will fail again, so fix the cause instead.",
+    "tags": ["Retries", "Reliability"], "technology": "Production", "apiVersion": "v1"},
+  {"id": "pr_w13_reliability_q002", "topicId": "pr_w13_reliability", "type": "SINGLE_CHOICE", "difficulty": "INTERMEDIATE",
+    "title": "Why do tools with side effects, such as creating an order, need idempotency keys?",
+    "options": [{"id": "A", "text": "So that a retry does not execute the action twice"}, {"id": "B", "text": "So that the model can read the key"}, {"id": "C", "text": "To speed up the model"}, {"id": "D", "text": "To encrypt the order"}],
+    "correctAnswer": ["A"], "explanation": "The server recognizes a repeated request with the same key and returns the earlier result instead of acting again.",
+    "tags": ["Idempotency"], "technology": "Production", "apiVersion": "v1"},
+  {"id": "pr_w13_reliability_q003", "topicId": "pr_w13_reliability", "type": "DEBUGGING", "difficulty": "INTERMEDIATE",
+    "title": "What is wrong with this retry loop?",
+    "codeSnippet": "for attempt in range(5):\n    try:\n        return model.invoke(prompt)\n    except Exception:\n        continue",
+    "options": [{"id": "A", "text": "It retries every exception immediately without backoff and silently returns None after the last failure"}, {"id": "B", "text": "range cannot be used with try"}, {"id": "C", "text": "return is not allowed inside try"}, {"id": "D", "text": "invoke cannot be retried"}],
+    "correctAnswer": ["A"], "explanation": "Wait with increasing delay, retry only transient errors, and raise the last error when attempts run out.",
+    "tags": ["Retries", "Debugging"], "technology": "Production", "apiVersion": "v1"},
+  {"id": "pr_w13_reliability_q004", "topicId": "pr_w13_reliability", "type": "SINGLE_CHOICE", "difficulty": "BEGINNER",
+    "title": "What is a fallback in an LLM application?",
+    "options": [{"id": "A", "text": "An alternative model or a safe default answer used when the primary call fails"}, {"id": "B", "text": "A second copy of the database"}, {"id": "C", "text": "A longer prompt"}, {"id": "D", "text": "A faster tokenizer"}],
+    "correctAnswer": ["A"], "explanation": "Fallbacks keep the service useful during provider outages or errors, at the cost of possibly lower quality.",
+    "tags": ["Fallback", "Reliability"], "technology": "Production", "apiVersion": "v1"}
+]}
