@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -80,7 +81,7 @@ fun QuizScreen(
                 Button(onClick = onExit) { Text("返回") }
             }
 
-            question != null -> Column(
+            question != null -> SelectionContainer { Column(
                 Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
@@ -124,7 +125,7 @@ fun QuizScreen(
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text("提交答案") }
                 }
-            }
+            } }
         }
     }
 }

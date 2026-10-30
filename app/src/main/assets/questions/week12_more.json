@@ -1,0 +1,393 @@
+{
+  "schemaVersion": 1,
+  "week": 12,
+  "module": "Agent Engineering",
+  "topics": [
+    {
+      "id": "ae_w12_experiments",
+      "name": "Running Experiments",
+      "description": "evaluate(), repetitions, dataset splits and versions in LangSmith.",
+      "notes": [
+        "## 实验与 evaluate()",
+        "- 实验（experiment）是某个应用版本在数据集上的评估结果，记录每个样例的输出、evaluator 分数和执行 trace。",
+        "- 同一数据集上通常会跑多个实验，用来比较不同提示词或模型配置。",
+        "- `evaluate()` / `client.evaluate()` 的核心参数：target、data、evaluators。",
+        "- target：接收输入字典（example.inputs）并返回输出字典的函数。",
+        "- data：数据集名称或 UUID，也可以是样例迭代器。",
+        "- 可选参数：experiment_prefix、description、metadata、max_concurrency、num_repetitions。",
+        "```python",
+        "results = client.evaluate(",
+        "    target,",
+        "    data=\"qa-basic\",",
+        "    evaluators=[correct],",
+        "    experiment_prefix=\"baseline\",",
+        "    max_concurrency=4,",
+        "    num_repetitions=3,",
+        ")",
+        "```",
+        "- max_concurrency 通过多线程并行处理数据集，大型评估任务建议设置。",
+        "- metadata 中的保留键 models / prompts / tools 会填充实验表对应的列，便于分组和过滤。",
+        "## 重复运行",
+        "- num_repetitions=N 让每个样例运行 N 次；5 个样例 × 5 次 = 25 次运行。",
+        "- LLM 输出不确定，重复运行可降低噪声；UI 显示平均分，并可查看多次运行的标准差。",
+        "## 数据集组织",
+        "- Example 由 inputs、可选的 reference outputs 和可选的 metadata 组成；reference outputs 不会传给应用，只供 evaluator 使用。",
+        "- Splits 是命名子集：可按训练/验证/测试、按类别或分阶段上线来划分；一个样例可以属于多个 split。",
+        "- Versions：样例变化时自动创建版本，可打标签；CI 中指定版本可避免数据集更新破坏流程。"
+      ]
+    },
+    {
+      "id": "ae_w12_custom_evaluators",
+      "name": "Custom, Summary and Pairwise Evaluators",
+      "description": "Writing code, summary, LLM-as-judge and pairwise evaluators.",
+      "notes": [
+        "## 代码 evaluator",
+        "- evaluator 函数的参数名固定，可取以下任意子集：run、example、inputs、outputs、reference_outputs。",
+        "- 大多数场景只需要 inputs、outputs、reference_outputs。",
+        "- 返回值：dict（key 加 score 或 value）、int/float/bool、str、list[dict]（一个函数返回多个指标）。",
+        "- 直接返回 int/float/bool 时按连续指标处理，函数名作为指标名；str 为分类指标。",
+        "- dict 中 score 用于数值指标，value 用于分类指标。",
+        "```python",
+        "def correct(outputs: dict, reference_outputs: dict) -> bool:",
+        "    return outputs[\"answer\"] == reference_outputs[\"answer\"]",
+        "```",
+        "## Summary evaluator",
+        "- 有些指标只能在整个实验上计算，例如整体通过率或 F1。",
+        "- Summary evaluator 的参数是列表：outputs: list[dict]、reference_outputs: list[dict] 等。",
+        "- 通过 evaluate(..., summary_evaluators=[...]) 传入，结果以对应 key 显示在 UI 中。",
+        "## LLM-as-judge",
+        "- 评分规则写在提示词里，可以是无参考（reference-free）或基于参考（reference-based）。",
+        "- 需要检查分数并调整提示词；加入输入、输出和期望评分的 few-shot 示例通常能提升效果。",
+        "- LangSmith 可收集对 evaluator 分数的人工修正，并自动作为 few-shot 示例插入提示词。",
+        "## Pairwise evaluator",
+        "- 对两个已有实验的输出做对比，而不是重新运行应用：evaluate((\"exp-a\", \"exp-b\"), evaluators=[...])。",
+        "- evaluator 的 outputs 是包含两个输出的列表；返回两项分数列表时，顺序与 outputs 一致，函数名作为 feedback key。",
+        "- randomize_order=True 随机化输出顺序，用来减轻位置偏差。"
+      ]
+    },
+    {
+      "id": "ae_w12_trajectory_rag",
+      "name": "Trajectory and RAG Evaluation",
+      "description": "agentevals trajectory matching and the four RAG evaluators.",
+      "notes": [
+        "## Agent 轨迹评估（agentevals）",
+        "- 轨迹（trajectory）是 agent 执行的完整消息序列，包括 tool calls。",
+        "- 两种方式：trajectory match（与硬编码的参考轨迹逐步比较）和 LLM-as-judge。",
+        "- Trajectory match 确定、快速、无额外 LLM 成本，适合流程明确的场景。",
+        "```python",
+        "from agentevals.trajectory.match import create_trajectory_match_evaluator",
+        "",
+        "evaluator = create_trajectory_match_evaluator(",
+        "    trajectory_match_mode=\"superset\",",
+        ")",
+        "```",
+        "- strict：消息和 tool calls 的顺序完全一致，但允许消息文本不同。",
+        "- unordered：tool calls 相同，顺序不限。",
+        "- subset：agent 只调用参考轨迹中出现的工具，不能多调用。",
+        "- superset：agent 至少调用参考中的工具，允许额外调用。",
+        "- 轨迹 LLM-as-judge（create_trajectory_llm_as_judge）可以不提供参考轨迹，也可使用带参考的提示词。",
+        "## RAG 评估",
+        "- Correctness：回答对比参考答案，需要数据集中有参考答案。",
+        "- Relevance：回答对比输入，不需要参考答案。",
+        "- Groundedness：回答对比检索到的文档，检查是否有幻觉，不需要参考答案。",
+        "- Retrieval relevance：检索文档对比问题，不需要参考答案。",
+        "- evaluator 要访问文档，target 就必须把 documents 放进返回的输出。",
+        "- 评分 schema 中把 explanation 字段放在布尔结果之前，模型按字段顺序生成，会先推理再给结论。"
+      ]
+    },
+    {
+      "id": "ae_w12_ci_feedback",
+      "name": "Pytest, Annotation Queues and Online Evaluators",
+      "description": "Regression tests in CI, human review queues and online evaluators.",
+      "notes": [
+        "## pytest 集成",
+        "- 用 @pytest.mark.langsmith 标记测试；每个测试同步为一个数据集样例，每次运行生成一个实验。",
+        "- 默认记录 pass 布尔反馈；可用 t.log_inputs / log_outputs / log_reference_outputs / log_feedback 补充。",
+        "- 参数化时，默认所有参数记为 inputs，用 output_keys 指定哪些参数是参考输出。",
+        "```python",
+        "@pytest.mark.langsmith(output_keys=[\"expected\"])",
+        "@pytest.mark.parametrize(\"query, expected\", [(\"hi\", \"hello\")])",
+        "def test_greet(query, expected):",
+        "    assert greet(query) == expected",
+        "```",
+        "- 环境变量：LANGSMITH_TEST_SUITE（测试套件名）、LANGSMITH_EXPERIMENT（实验名）、LANGSMITH_EXPERIMENT_METADATA（JSON 元数据）。",
+        "- LANGSMITH_TEST_CACHE 把 HTTP 请求缓存到磁盘，节省 CI 成本；LANGSMITH_TEST_TRACKING=false 只本地运行，不上传结果。",
+        "## 人工反馈：Annotation queues",
+        "- 单运行队列：一次审阅一个 run 或 thread，按评分细则（rubric）提交反馈。",
+        "- Pairwise 队列：从数据集中选择恰好两个实验创建，并排比较 Run A 和 Run B。",
+        "- 可通过 Add to Dataset 把审阅过的 run 存为数据集样例。",
+        "- 设置多个 reviewer 时，reviewer 看不到其他人的反馈，但评论对所有人可见。",
+        "## 在线 evaluator",
+        "- 作用于生产 trace（runs 和 threads），没有 reference outputs。",
+        "- 可用过滤条件限定触发范围，sampling rate 控制过滤后运行的评估比例（0.1 即 10%）。",
+        "- 回填（backfill）历史 runs 只能在创建规则时设置。"
+      ]
+    }
+  ],
+  "questions": [
+    {
+      "id": "ae_w12_experiments_q101", "topicId": "ae_w12_experiments", "type": "SINGLE_CHOICE", "difficulty": "BEGINNER",
+      "title": "In client.evaluate(), which argument tells LangSmith which dataset to run the target function over?",
+      "options": [{"id": "A", "text": "target"}, {"id": "B", "text": "data"}, {"id": "C", "text": "metadata"}, {"id": "D", "text": "experiment_prefix"}],
+      "correctAnswer": ["B"],
+      "explanation": "The data argument takes the dataset name or UUID (or an iterator of examples). target is the function being evaluated, and experiment_prefix only names the experiment.",
+      "tags": ["evaluate", "Dataset"], "technology": "LangSmith", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/evaluate-llm-application"
+    },
+    {
+      "id": "ae_w12_experiments_q102", "topicId": "ae_w12_experiments", "type": "SINGLE_CHOICE", "difficulty": "BEGINNER",
+      "title": "How are the reference outputs of a dataset example used during an experiment?",
+      "options": [{"id": "A", "text": "They are passed to the target function together with the inputs"}, {"id": "B", "text": "They are only used by evaluators and are not passed to the application"}, {"id": "C", "text": "They are appended to the system prompt"}, {"id": "D", "text": "They are used as few-shot examples for the target model"}],
+      "correctAnswer": ["B"],
+      "explanation": "Reference outputs are not passed to the application; evaluators read them to compare against the actual outputs. Only example inputs reach the target function.",
+      "tags": ["Dataset", "Example"], "technology": "LangSmith", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/evaluation-concepts"
+    },
+    {
+      "id": "ae_w12_experiments_q103", "topicId": "ae_w12_experiments", "type": "CODE_COMPLETION", "difficulty": "INTERMEDIATE",
+      "title": "Fill in the blank so that each example in the dataset is run three times.",
+      "codeSnippet": "results = client.evaluate(\n    target,\n    data=\"qa-basic\",\n    evaluators=[correct],\n    experiment_prefix=\"baseline\",\n    ______=3,\n)",
+      "options": [{"id": "A", "text": "max_concurrency"}, {"id": "B", "text": "repetitions"}, {"id": "C", "text": "num_repetitions"}, {"id": "D", "text": "num_runs"}],
+      "correctAnswer": ["C"],
+      "explanation": "num_repetitions sets how many times each example is evaluated. max_concurrency only controls parallelism, not the number of runs per example.",
+      "tags": ["evaluate", "Repetitions"], "technology": "LangSmith", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/repetition"
+    },
+    {
+      "id": "ae_w12_experiments_q104", "topicId": "ae_w12_experiments", "type": "CODE_READING", "difficulty": "BEGINNER",
+      "title": "The dataset has 5 examples. How many target runs does this experiment produce?",
+      "codeSnippet": "results = evaluate(\n    target,\n    data=\"qa-basic\",\n    evaluators=[correct],\n    num_repetitions=5,\n)",
+      "options": [{"id": "A", "text": "5"}, {"id": "B", "text": "10"}, {"id": "C", "text": "25"}, {"id": "D", "text": "1"}],
+      "correctAnswer": ["C"],
+      "explanation": "Each of the 5 examples is run 5 times, giving 25 runs. Repetitions multiply the runs rather than adding to them.",
+      "tags": ["Repetitions"], "technology": "LangSmith", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/repetition"
+    },
+    {
+      "id": "ae_w12_experiments_q105", "topicId": "ae_w12_experiments", "type": "MULTIPLE_CHOICE", "difficulty": "INTERMEDIATE",
+      "title": "Which are common ways to use dataset splits in LangSmith?",
+      "options": [{"id": "A", "text": "ML-style training, validation and test subsets to avoid overfitting"}, {"id": "B", "text": "Category-based subsets to evaluate different input types separately"}, {"id": "C", "text": "A staged rollout that keeps exploratory examples isolated from the main evaluation set"}, {"id": "D", "text": "Enforcing that every example belongs to exactly one split, since multiple splits are not allowed"}],
+      "correctAnswer": ["A", "B", "C"],
+      "explanation": "Splits are named subsets for ML-style, category-based or staged-rollout grouping. LangSmith does allow an example to belong to multiple splits, so option D is wrong.",
+      "tags": ["Dataset", "Splits"], "technology": "LangSmith", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/evaluation-concepts"
+    },
+    {
+      "id": "ae_w12_experiments_q106", "topicId": "ae_w12_experiments", "type": "DEBUGGING", "difficulty": "ADVANCED",
+      "title": "This evaluation fails when the evaluator runs. What is the problem?",
+      "codeSnippet": "def target(question: str) -> str:\n    return rag_bot(question)[\"answer\"]\n\ndef correct(outputs: dict, reference_outputs: dict) -> bool:\n    return outputs[\"answer\"] == reference_outputs[\"answer\"]\n\nevaluate(target, data=\"qa-basic\", evaluators=[correct])",
+      "options": [{"id": "A", "text": "evaluate() requires experiment_prefix to be set"}, {"id": "B", "text": "Evaluators are not allowed to read reference_outputs"}, {"id": "C", "text": "The target should take the example's inputs dict and return an output dict such as {\"answer\": ...}"}, {"id": "D", "text": "data must be a dataset UUID, not a name"}],
+      "correctAnswer": ["C"],
+      "explanation": "The target function receives the inputs dictionary and must return a dictionary, which evaluators then index as outputs[\"answer\"]. Here the target returns a plain string, so the evaluator cannot read it.",
+      "tags": ["evaluate", "Target"], "technology": "LangSmith", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/evaluate-llm-application"
+    },
+    {
+      "id": "ae_w12_experiments_q107", "topicId": "ae_w12_experiments", "type": "SINGLE_CHOICE", "difficulty": "ADVANCED",
+      "title": "Examples in a dataset keep changing, but a CI pipeline must not break when they do. What does LangSmith offer for this?",
+      "options": [{"id": "A", "text": "Dataset versions are created automatically when examples change; tag a version and target it in CI"}, {"id": "B", "text": "Datasets are immutable once created, so examples cannot change"}, {"id": "C", "text": "Metadata on each example freezes its content"}, {"id": "D", "text": "Splits snapshot the dataset at the time they are created"}],
+      "correctAnswer": ["A"],
+      "explanation": "LangSmith creates dataset versions automatically when examples change, and versions can be tagged for important milestones. Splits and metadata organize examples but do not pin their content.",
+      "tags": ["Dataset", "Versions", "CI"], "technology": "LangSmith", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/evaluation-concepts"
+    },
+    {
+      "id": "ae_w12_custom_evaluators_q101", "topicId": "ae_w12_custom_evaluators", "type": "SINGLE_CHOICE", "difficulty": "BEGINNER",
+      "title": "A Python code evaluator named exact_match returns a bare bool. How is the result recorded?",
+      "options": [{"id": "A", "text": "As a continuous metric named after the function, exact_match"}, {"id": "B", "text": "As a categorical metric named score"}, {"id": "C", "text": "It is ignored unless a dict is returned"}, {"id": "D", "text": "As a free-text comment on the run"}],
+      "correctAnswer": ["A"],
+      "explanation": "An int, float or bool return value is treated as a continuous metric, and the function name becomes the metric name. A dict is only needed to customize the key or use a categorical value.",
+      "tags": ["Evaluator", "Code evaluator"], "technology": "LangSmith", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/code-evaluator-sdk"
+    },
+    {
+      "id": "ae_w12_custom_evaluators_q102", "topicId": "ae_w12_custom_evaluators", "type": "CODE_READING", "difficulty": "INTERMEDIATE",
+      "title": "How many pieces of feedback does this evaluator log for each example?",
+      "codeSnippet": "def check(outputs: dict, reference_outputs: dict) -> list[dict]:\n    return [\n        {\"key\": \"correct\",\n         \"score\": outputs[\"answer\"] == reference_outputs[\"answer\"]},\n        {\"key\": \"concise\",\n         \"score\": len(outputs[\"answer\"]) < 200},\n    ]",
+      "options": [{"id": "A", "text": "1, because the function has one name"}, {"id": "B", "text": "3"}, {"id": "C", "text": "0, because lists are not supported"}, {"id": "D", "text": "2, one per dict in the list"}],
+      "correctAnswer": ["D"],
+      "explanation": "Returning list[dict] lets one evaluator log multiple metrics, one feedback entry per dict key. The function name is not used as the key when the dicts specify their own keys.",
+      "tags": ["Evaluator", "Feedback"], "technology": "LangSmith", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/code-evaluator-sdk"
+    },
+    {
+      "id": "ae_w12_custom_evaluators_q103", "topicId": "ae_w12_custom_evaluators", "type": "CODE_COMPLETION", "difficulty": "INTERMEDIATE",
+      "title": "Fill in the blank so that the evaluator logs a categorical metric.",
+      "codeSnippet": "def tone(outputs: dict) -> dict:\n    formal = outputs[\"answer\"].startswith(\"Dear\")\n    label = \"formal\" if formal else \"casual\"\n    return {\"key\": \"tone\", ______: label}",
+      "options": [{"id": "A", "text": "\"label\""}, {"id": "B", "text": "\"score\""}, {"id": "C", "text": "\"category\""}, {"id": "D", "text": "\"value\""}],
+      "correctAnswer": ["D"],
+      "explanation": "In an evaluator result dict, \"score\" is used for numerical metrics and \"value\" for categorical ones. label and category are not recognized keys.",
+      "tags": ["Evaluator", "Feedback"], "technology": "LangSmith", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/code-evaluator-sdk"
+    },
+    {
+      "id": "ae_w12_custom_evaluators_q104", "topicId": "ae_w12_custom_evaluators", "type": "DEBUGGING", "difficulty": "ADVANCED",
+      "title": "The goal is a single pass-rate metric for the whole experiment, but this logs one value per example. What is the fix?",
+      "codeSnippet": "def pass_rate(outputs: dict, reference_outputs: dict) -> dict:\n    ok = outputs[\"label\"] == reference_outputs[\"label\"]\n    return {\"key\": \"pass_rate\", \"score\": float(ok)}\n\nevaluate(app, data=\"toxic\", evaluators=[pass_rate])",
+      "options": [{"id": "A", "text": "Increase max_concurrency so results are aggregated"}, {"id": "B", "text": "Set num_repetitions so the scores are averaged into one metric"}, {"id": "C", "text": "Return a list of dicts instead of a single dict"}, {"id": "D", "text": "Make it a summary evaluator that takes outputs and reference_outputs as lists and pass it via summary_evaluators"}],
+      "correctAnswer": ["D"],
+      "explanation": "Experiment-level metrics need a summary evaluator, which receives lists of outputs and reference outputs and is registered with summary_evaluators. A row-level evaluator is called once per example.",
+      "tags": ["Evaluator", "Summary evaluator"], "technology": "LangSmith", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/summary"
+    },
+    {
+      "id": "ae_w12_custom_evaluators_q105", "topicId": "ae_w12_custom_evaluators", "type": "SINGLE_CHOICE", "difficulty": "INTERMEDIATE",
+      "title": "How can LangSmith help align an LLM-as-a-judge evaluator with human preferences?",
+      "options": [{"id": "A", "text": "Collect human corrections on evaluator scores, which are inserted into the prompt as few-shot examples"}, {"id": "B", "text": "Raise the judge model's temperature so it explores more grading styles"}, {"id": "C", "text": "Remove the reference output from the prompt"}, {"id": "D", "text": "Switch the evaluator to a code evaluator"}],
+      "correctAnswer": ["A"],
+      "explanation": "With few-shot enabled, human corrections to evaluator scores are automatically added to the judge prompt as examples. The other options do not use human feedback to calibrate the judge.",
+      "tags": ["LLM-as-judge", "Calibration"], "technology": "LangSmith", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/llm-as-judge"
+    },
+    {
+      "id": "ae_w12_custom_evaluators_q106", "topicId": "ae_w12_custom_evaluators", "type": "MULTIPLE_CHOICE", "difficulty": "INTERMEDIATE",
+      "title": "Which statements about running a pairwise evaluation with evaluate() are correct?",
+      "options": [{"id": "A", "text": "The target is a list of two existing experiments, given as names or UUIDs"}, {"id": "B", "text": "randomize_order=True randomizes output order to reduce positional bias"}, {"id": "C", "text": "The outputs argument of the evaluator is a two-item list of outputs"}, {"id": "D", "text": "It re-runs the application on the dataset for both versions"}],
+      "correctAnswer": ["A", "B", "C"],
+      "explanation": "Pairwise evaluation compares outputs of experiments that already exist; it does not execute the application again.",
+      "tags": ["Pairwise", "Evaluator"], "technology": "LangSmith", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/evaluate-pairwise"
+    },
+    {
+      "id": "ae_w12_custom_evaluators_q107", "topicId": "ae_w12_custom_evaluators", "type": "CODE_READING", "difficulty": "ADVANCED",
+      "title": "For an example where exp-a's answer is shorter than exp-b's, what does this pairwise evaluator log?",
+      "codeSnippet": "def ranked_preference(inputs: dict, outputs: list[dict]) -> list:\n    a = outputs[0][\"answer\"]\n    b = outputs[1][\"answer\"]\n    return [1, 0] if len(a) <= len(b) else [0, 1]\n\nevaluate((\"exp-a\", \"exp-b\"), evaluators=[ranked_preference])",
+      "options": [{"id": "A", "text": "Key ranked_preference: 0 for exp-a and 1 for exp-b"}, {"id": "B", "text": "Key score: 1 for exp-b"}, {"id": "C", "text": "Key ranked_preference: 1 for exp-a and 0 for exp-b"}, {"id": "D", "text": "An error, because evaluate() needs a data argument"}],
+      "correctAnswer": ["C"],
+      "explanation": "A two-item list of scores follows the order of outputs, so index 0 belongs to exp-a. The function name becomes the feedback key.",
+      "tags": ["Pairwise", "Evaluator"], "technology": "LangSmith", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/evaluate-pairwise"
+    },
+    {
+      "id": "ae_w12_trajectory_rag_q101", "topicId": "ae_w12_trajectory_rag", "type": "SINGLE_CHOICE", "difficulty": "BEGINNER",
+      "title": "Which agentevals trajectory_match_mode requires the same tool calls as the reference but allows them in any order?",
+      "options": [{"id": "A", "text": "strict"}, {"id": "B", "text": "subset"}, {"id": "C", "text": "superset"}, {"id": "D", "text": "unordered"}],
+      "correctAnswer": ["D"],
+      "explanation": "unordered accepts the same tool calls in any order. strict also enforces the order of messages and tool calls.",
+      "tags": ["Trajectory", "agentevals"], "technology": "LangSmith", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/trajectory-evals"
+    },
+    {
+      "id": "ae_w12_trajectory_rag_q102", "topicId": "ae_w12_trajectory_rag", "type": "CODE_COMPLETION", "difficulty": "INTERMEDIATE",
+      "title": "The reference trajectory only calls get_weather. The agent must call it but may also call extra tools. Which mode fills the blank?",
+      "codeSnippet": "evaluator = create_trajectory_match_evaluator(\n    trajectory_match_mode=\"______\",\n)",
+      "options": [{"id": "A", "text": "strict"}, {"id": "B", "text": "unordered"}, {"id": "C", "text": "subset"}, {"id": "D", "text": "superset"}],
+      "correctAnswer": ["D"],
+      "explanation": "superset requires at least the reference tool calls and permits extras. subset is the opposite: the agent may call only tools that appear in the reference.",
+      "tags": ["Trajectory", "agentevals"], "technology": "LangSmith", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/trajectory-evals"
+    },
+    {
+      "id": "ae_w12_trajectory_rag_q103", "topicId": "ae_w12_trajectory_rag", "type": "CODE_READING", "difficulty": "ADVANCED",
+      "title": "What score does this evaluation produce?",
+      "codeSnippet": "evaluator = create_trajectory_match_evaluator(\n    trajectory_match_mode=\"strict\",\n)\n# actual: Human -> AI(tool_call get_weather city=\"SF\")\n#         -> Tool -> AI(\"It is sunny in SF.\")\n# reference: the same four messages and tool call, but the\n#         final AI text is \"The weather in SF is sunny.\"\nresult = evaluator(outputs=actual, reference_outputs=reference)\nprint(result[\"score\"])",
+      "options": [{"id": "A", "text": "True, because strict mode allows differences in message content"}, {"id": "B", "text": "False, because the final message text differs"}, {"id": "C", "text": "False, because strict mode requires an LLM judge"}, {"id": "D", "text": "An error, because the trajectories differ"}],
+      "correctAnswer": ["A"],
+      "explanation": "strict mode requires identical messages and tool calls in the same order, but it allows the message content to differ. It does not call an LLM.",
+      "tags": ["Trajectory", "agentevals"], "technology": "LangSmith", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/trajectory-evals"
+    },
+    {
+      "id": "ae_w12_trajectory_rag_q104", "topicId": "ae_w12_trajectory_rag", "type": "SINGLE_CHOICE", "difficulty": "BEGINNER",
+      "title": "Which RAG evaluator checks whether an answer is justified by the retrieved documents, without needing a reference answer?",
+      "options": [{"id": "A", "text": "Correctness"}, {"id": "B", "text": "Relevance"}, {"id": "C", "text": "Groundedness"}, {"id": "D", "text": "Retrieval relevance"}],
+      "correctAnswer": ["C"],
+      "explanation": "Groundedness compares the response to the retrieved documents to detect hallucinations. Correctness needs a reference answer, and retrieval relevance compares documents to the question.",
+      "tags": ["RAG", "Groundedness"], "technology": "LangSmith", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/evaluate-rag-tutorial"
+    },
+    {
+      "id": "ae_w12_trajectory_rag_q105", "topicId": "ae_w12_trajectory_rag", "type": "MULTIPLE_CHOICE", "difficulty": "INTERMEDIATE",
+      "title": "Which RAG evaluators do not need a reference answer in the dataset?",
+      "options": [{"id": "A", "text": "Correctness (response vs reference answer)"}, {"id": "B", "text": "Relevance (response vs input)"}, {"id": "C", "text": "Groundedness (response vs retrieved docs)"}, {"id": "D", "text": "Retrieval relevance (retrieved docs vs input)"}],
+      "correctAnswer": ["B", "C", "D"],
+      "explanation": "Only correctness compares the response to a reference answer. The other three compare artifacts produced by the run itself.",
+      "tags": ["RAG", "Evaluator"], "technology": "LangSmith", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/evaluate-rag-tutorial"
+    },
+    {
+      "id": "ae_w12_trajectory_rag_q106", "topicId": "ae_w12_trajectory_rag", "type": "DEBUGGING", "difficulty": "ADVANCED",
+      "title": "The groundedness evaluator raises a KeyError. What is the cause?",
+      "codeSnippet": "def rag_target(inputs: dict) -> dict:\n    docs = retriever.invoke(inputs[\"question\"])\n    answer = generate(inputs[\"question\"], docs)\n    return {\"answer\": answer}\n\ndef groundedness(inputs: dict, outputs: dict) -> bool:\n    facts = \"\\n\\n\".join(d.page_content for d in outputs[\"documents\"])\n    return judge(facts, outputs[\"answer\"])",
+      "options": [{"id": "A", "text": "The target does not return the retrieved documents in its outputs"}, {"id": "B", "text": "Groundedness evaluators must take reference_outputs"}, {"id": "C", "text": "retriever.invoke cannot be used inside an evaluation target"}, {"id": "D", "text": "The evaluator must be async"}],
+      "correctAnswer": ["A"],
+      "explanation": "The evaluator only sees what the target returns, so the target must include the retrieved documents, for example {\"answer\": ..., \"documents\": docs}. Groundedness needs no reference answer.",
+      "tags": ["RAG", "Groundedness"], "technology": "LangSmith", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/evaluate-rag-tutorial"
+    },
+    {
+      "id": "ae_w12_trajectory_rag_q107", "topicId": "ae_w12_trajectory_rag", "type": "SINGLE_CHOICE", "difficulty": "ADVANCED",
+      "title": "In a structured grade schema for an LLM judge, why is the explanation field placed before the boolean result?",
+      "options": [{"id": "A", "text": "Fields are generated in the order they are defined, so reasoning comes before the final verdict"}, {"id": "B", "text": "LangSmith rejects schemas that put booleans first"}, {"id": "C", "text": "The explanation is used as the feedback key"}, {"id": "D", "text": "It lets the judge skip reading the reference answer"}],
+      "correctAnswer": ["A"],
+      "explanation": "The model generates fields in the defined order, so putting the explanation first makes it reason before committing to a verdict. The tutorial notes this ordering explicitly.",
+      "tags": ["LLM-as-judge", "Prompt design"], "technology": "LangSmith", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/evaluate-rag-tutorial"
+    },
+    {
+      "id": "ae_w12_ci_feedback_q101", "topicId": "ae_w12_ci_feedback", "type": "SINGLE_CHOICE", "difficulty": "BEGINNER",
+      "title": "Which decorator marks a pytest test so that it is tracked as a LangSmith example and experiment result?",
+      "options": [{"id": "A", "text": "@pytest.mark.langsmith"}, {"id": "B", "text": "@pytest.fixture(langsmith=True)"}, {"id": "C", "text": "@langsmith.evaluate"}, {"id": "D", "text": "@traceable(test=True)"}],
+      "correctAnswer": ["A"],
+      "explanation": "Every test decorated with @pytest.mark.langsmith is synced to a dataset example, and each run creates an experiment with one result per test case.",
+      "tags": ["pytest", "CI"], "technology": "LangSmith", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/pytest"
+    },
+    {
+      "id": "ae_w12_ci_feedback_q102", "topicId": "ae_w12_ci_feedback", "type": "CODE_READING", "difficulty": "INTERMEDIATE",
+      "title": "Which feedback keys does the LangSmith result of this test contain?",
+      "codeSnippet": "@pytest.mark.langsmith\ndef test_sql() -> None:\n    t.log_inputs({\"user_query\": \"all users\"})\n    sql = generate_sql(\"all users\")\n    t.log_outputs({\"sql\": sql})\n    t.log_feedback(key=\"valid_sql\", score=is_valid_sql(sql))\n    assert \"customers\" in sql",
+      "options": [{"id": "A", "text": "Only valid_sql"}, {"id": "B", "text": "pass and valid_sql"}, {"id": "C", "text": "Only pass"}, {"id": "D", "text": "None, because no reference outputs were logged"}],
+      "correctAnswer": ["B"],
+      "explanation": "LangSmith records a default boolean pass feedback key from the test result, and log_feedback adds the custom valid_sql key. Reference outputs are optional.",
+      "tags": ["pytest", "Feedback"], "technology": "LangSmith", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/pytest"
+    },
+    {
+      "id": "ae_w12_ci_feedback_q103", "topicId": "ae_w12_ci_feedback", "type": "CODE_COMPLETION", "difficulty": "INTERMEDIATE",
+      "title": "Fill in the blank so expected_sql is logged as the reference output rather than as an input.",
+      "codeSnippet": "@pytest.mark.langsmith(______=[\"expected_sql\"])\n@pytest.mark.parametrize(\n    \"user_query, expected_sql\",\n    [(\"Get all users from the customers table\",\n      \"SELECT * FROM customers\")],\n)\ndef test_sql_generation(user_query, expected_sql):\n    assert generate_sql(user_query) == expected_sql",
+      "options": [{"id": "A", "text": "reference_keys"}, {"id": "B", "text": "expected"}, {"id": "C", "text": "outputs"}, {"id": "D", "text": "output_keys"}],
+      "correctAnswer": ["D"],
+      "explanation": "By default, all test arguments are logged as example inputs. output_keys names the arguments that represent reference outputs.",
+      "tags": ["pytest", "Dataset"], "technology": "LangSmith", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/pytest"
+    },
+    {
+      "id": "ae_w12_ci_feedback_q104", "topicId": "ae_w12_ci_feedback", "type": "SINGLE_CHOICE", "difficulty": "BEGINNER",
+      "title": "An online evaluator is set to a sampling rate of 0.1. What does this mean?",
+      "options": [{"id": "A", "text": "It evaluates 10% of the runs that match the evaluator's filter"}, {"id": "B", "text": "It evaluates every run but scores only the first 10 tokens"}, {"id": "C", "text": "It runs once every 0.1 seconds"}, {"id": "D", "text": "It evaluates 0.1% of all runs in the workspace"}],
+      "correctAnswer": ["A"],
+      "explanation": "The sampling rate controls the percentage of filtered runs that trigger the evaluator, which is a common way to control LLM-judge cost.",
+      "tags": ["Online evaluation", "Sampling"], "technology": "LangSmith", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/online-evaluations-llm-as-judge"
+    },
+    {
+      "id": "ae_w12_ci_feedback_q105", "topicId": "ae_w12_ci_feedback", "type": "SINGLE_CHOICE", "difficulty": "ADVANCED",
+      "title": "When can you apply an online evaluator to past runs?",
+      "options": [{"id": "A", "text": "At any time by editing the existing rule"}, {"id": "B", "text": "Only when you create the rule, using the apply-to-past-runs-from-date option"}, {"id": "C", "text": "Never; online evaluators only see new traces"}, {"id": "D", "text": "Only after the project is deleted and recreated"}],
+      "correctAnswer": ["B"],
+      "explanation": "Backfill is configured in the Advanced section while creating the rule and cannot be added later. It runs as a background job, after which the rule keeps evaluating new runs.",
+      "tags": ["Online evaluation", "Backfill"], "technology": "LangSmith", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/online-evaluations-llm-as-judge"
+    },
+    {
+      "id": "ae_w12_ci_feedback_q106", "topicId": "ae_w12_ci_feedback", "type": "MULTIPLE_CHOICE", "difficulty": "INTERMEDIATE",
+      "title": "Which environment variables does the LangSmith pytest integration support?",
+      "options": [{"id": "A", "text": "LANGSMITH_TEST_SUITE to name the test suite"}, {"id": "B", "text": "LANGSMITH_EXPERIMENT to name the experiment"}, {"id": "C", "text": "LANGSMITH_EXPERIMENT_METADATA to attach JSON metadata to the experiment"}, {"id": "D", "text": "LANGSMITH_TEST_THRESHOLD to fail CI when the pass rate drops"}],
+      "correctAnswer": ["A", "B", "C"],
+      "explanation": "The docs describe suite name, experiment name and experiment metadata variables. There is no pass-rate threshold variable; failures come from assertions in the tests.",
+      "tags": ["pytest", "CI"], "technology": "LangSmith", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/pytest"
+    },
+    {
+      "id": "ae_w12_ci_feedback_q107", "topicId": "ae_w12_ci_feedback", "type": "MULTIPLE_CHOICE", "difficulty": "INTERMEDIATE",
+      "title": "Which statements about annotation queues are correct?",
+      "options": [{"id": "A", "text": "A single-run queue lets reviewers submit rubric feedback on runs or threads"}, {"id": "B", "text": "A pairwise queue is created by selecting exactly two experiments in a dataset"}, {"id": "C", "text": "A reviewed run can be saved as a dataset example with Add to Dataset"}, {"id": "D", "text": "With several reviewers per run, each reviewer can see the others' feedback"}],
+      "correctAnswer": ["A", "B", "C"],
+      "explanation": "Reviewers cannot see feedback left by other reviewers, although comments are visible to everyone. The other statements match the annotation queue workflow.",
+      "tags": ["Annotation queue", "Human feedback"], "technology": "LangSmith", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/annotation-queues"
+    }
+  ]
+}

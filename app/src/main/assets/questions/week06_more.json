@@ -1,0 +1,373 @@
+{
+  "schemaVersion": 1,
+  "week": 6,
+  "module": "LangGraph",
+  "topics": [
+    {
+      "id": "lg_w06_send",
+      "name": "Send API and Orchestrator-Worker",
+      "description": "Dynamic fan-out with Send for map-reduce and orchestrator-worker workflows.",
+      "notes": [
+        "## Send API 与动态 fan-out",
+        "- 当并行分支的数量在编译时未知（如 map-reduce）时，用 Send 动态创建任务。",
+        "- Send(node, state) 接收两个参数：目标节点名，以及传给该节点的状态。",
+        "- Send 对象从条件边的路由函数中返回，每个 Send 对应一次下游节点调用，且各自拥有独立的输入 state。",
+        "```python",
+        "def continue_to_jokes(state: OverallState):",
+        "    return [Send(\"generate_joke\", {\"subject\": s}) for s in state[\"subjects\"]]",
+        "",
+        "builder.add_conditional_edges(\"generate_topics\", continue_to_jokes, [\"generate_joke\"])",
+        "```",
+        "## Orchestrator-worker",
+        "- Orchestrator 拆分任务、把子任务分派给 worker、最后由 synthesizer 汇总结果。",
+        "- 子任务无法预先定义时使用此模式；worker 的数量与输入在运行时才确定。",
+        "- 每个 worker 有自己的 state（如 WorkerState），所有 worker 的输出写入同一个共享 key。",
+        "- 共享 key 需要 reducer，否则后写入的值会覆盖前面的值。",
+        "```python",
+        "completed_sections: Annotated[list, operator.add]  # 所有 worker 并行写入",
+        "```",
+        "- map 阶段之后用普通 add_edge 连接到汇总节点（reduce）。"
+      ]
+    },
+    {
+      "id": "lg_w06_parallel",
+      "name": "Supersteps, Parallelism and Deferred Nodes",
+      "description": "How parallel branches execute in supersteps and how to wait for multiple branches.",
+      "notes": [
+        "## Super-step 与并行执行",
+        "- LangGraph 基于 message passing，按离散的 super-step 执行（受 Pregel 启发）。",
+        "- super-step 是对图中节点的一次迭代：并行节点在同一个 super-step，串行节点分属不同 super-step。",
+        "- 一个节点有多条出边时，所有目标节点在下一个 super-step 并行执行。",
+        "- 每个 super-step 是事务性的：任一并行分支抛异常，本 step 的更新都不会应用到 state。",
+        "- 并行分支更新同一个 key 时用 reducer（如 operator.add）累积；并行更新的顺序不保证一致。",
+        "- 可用 RetryPolicy 重试失败节点，只会重试失败的分支。",
+        "## Defer 与等待多个分支",
+        "- 分支长度不同时，普通边会让汇合节点执行多次。",
+        "- add_node 时设置 defer=True：该节点会等到图中没有待处理任务后才执行。",
+        "```python",
+        "builder.add_node(\"d\", d, defer=True)",
+        "builder.add_edge(\"b_2\", \"d\")",
+        "builder.add_edge(\"c\", \"d\")",
+        "```",
+        "- 列表形式的边 add_edge([\"b_2\", \"c\"], \"d\")：所有列出的节点完成后 d 只运行一次。",
+        "- 若列表中某个分支没有被选中，d 不会运行，也不会报错。",
+        "- 即使 d 设置了 defer=True，发给它的 Send 仍会单独调用它。"
+      ]
+    },
+    {
+      "id": "lg_w06_loops",
+      "name": "Loops and Recursion Limit",
+      "description": "Terminating loops, GraphRecursionError and RemainingSteps.",
+      "notes": [
+        "## 循环与终止条件",
+        "- 带循环的图必须有终止机制：通常是一条条件边，在满足终止条件时路由到 END。",
+        "```python",
+        "def route(state: State) -> Literal[\"b\", END]:",
+        "    return END if len(state[\"aggregate\"]) >= 7 else \"b\"",
+        "```",
+        "## Recursion limit",
+        "- recursion limit 限制单次执行最多的 super-step 数，超过后抛出 GraphRecursionError（来自 langgraph.errors）。",
+        "- 通过 config 设置；recursion_limit 是独立的顶层 key，不能放进 configurable。",
+        "```python",
+        "graph.invoke(inputs, config={\"recursion_limit\": 5})",
+        "```",
+        "- 带分支的循环按 super-step 计数：A、B、（C 与 D 并行）、A，一圈共四步。",
+        "## 主动处理：RemainingSteps",
+        "- 在 state 中声明 remaining_steps: RemainingSteps（managed value），表示距离上限还剩多少步。",
+        "- 路由函数据此提前走向 END 或 fallback 节点，图可以正常结束，不抛异常。",
+        "- 被动方式：在 invoke 之外 try/except GraphRecursionError，实现简单，但图已被终止。",
+        "- 当前步数也可从 config[\"metadata\"][\"langgraph_step\"] 读取。"
+      ]
+    },
+    {
+      "id": "lg_w06_subgraphs",
+      "name": "Subgraphs and Streaming Modes",
+      "description": "Using subgraphs as nodes, Command.PARENT, and the main stream modes.",
+      "notes": [
+        "## Subgraph 作为节点",
+        "- subgraph 是被用作另一个图中节点的图。",
+        "- 共享 state key：直接 add_node(\"node_1\", subgraph)，无需包装函数。",
+        "- 不同 schema（无共享 key）：在节点函数里转换 state、调用 subgraph.invoke，再把结果转换回父 state。",
+        "```python",
+        "def call_subgraph(state: State):",
+        "    out = subgraph.invoke({\"bar\": state[\"foo\"]})",
+        "    return {\"foo\": out[\"bar\"]}",
+        "```",
+        "- 从子图节点跳到父图节点：Command(update=..., goto=..., graph=Command.PARENT)。",
+        "- 更新父子共享的 key 时，父图 state 中该 key 必须定义 reducer。",
+        "## Streaming modes",
+        "- values：每步之后的完整 state；updates：每步各节点返回的增量更新（含节点名）。",
+        "- messages：来自 LLM 调用的 (message_chunk, metadata) 二元组，可按 metadata[\"langgraph_node\"] 过滤。",
+        "- custom：节点内用 get_stream_writer() 发送自定义数据，需设置 stream_mode=\"custom\"。",
+        "- 其他模式：checkpoints、tasks、debug（前两者需要 checkpointer）。",
+        "- 父图要看到子图的输出（包括 messages token）需设置 subgraphs=True。",
+        "- 可传入列表同时使用多个 stream_mode。"
+      ]
+    }
+  ],
+  "questions": [
+    {
+      "id": "lg_w06_send_q101", "topicId": "lg_w06_send", "type": "SINGLE_CHOICE", "difficulty": "BEGINNER",
+      "title": "What are the two arguments of Send?",
+      "options": [{"id": "A", "text": "The state to pass and the reducer to apply"}, {"id": "B", "text": "The name of the node and the state to pass to it"}, {"id": "C", "text": "The source node and the destination node"}, {"id": "D", "text": "The node function and a retry policy"}],
+      "correctAnswer": ["B"],
+      "explanation": "Send takes the name of the target node first and the state to pass to that node second. It is not a source/destination pair like an edge.",
+      "tags": ["Send"], "technology": "LangGraph", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/graph-api"
+    },
+    {
+      "id": "lg_w06_send_q102", "topicId": "lg_w06_send", "type": "CODE_COMPLETION", "difficulty": "BEGINNER",
+      "title": "Fill in the class that dispatches one worker invocation per section.",
+      "codeSnippet": "def assign_workers(state: State):\n    return [______(\"llm_call\", {\"section\": s}) for s in state[\"sections\"]]\n\nbuilder.add_conditional_edges(\"orchestrator\", assign_workers, [\"llm_call\"])",
+      "options": [{"id": "A", "text": "Command"}, {"id": "B", "text": "Branch"}, {"id": "C", "text": "Send"}, {"id": "D", "text": "Route"}],
+      "correctAnswer": ["C"],
+      "explanation": "The docs' orchestrator-worker example returns a list of Send objects from the conditional edge function. Command updates state and routes from a node, it is not used for this fan-out.",
+      "tags": ["Send", "Orchestrator-worker"], "technology": "LangGraph", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/workflows-agents"
+    },
+    {
+      "id": "lg_w06_send_q103", "topicId": "lg_w06_send", "type": "CODE_READING", "difficulty": "INTERMEDIATE",
+      "title": "How is generate_joke invoked after generate_topics finishes?",
+      "codeSnippet": "# state: {\"subjects\": [\"lions\", \"elephants\", \"penguins\"], \"jokes\": []}\ndef continue_to_jokes(state: OverallState):\n    return [Send(\"generate_joke\", {\"subject\": s}) for s in state[\"subjects\"]]\n\nbuilder.add_conditional_edges(\"generate_topics\", continue_to_jokes, [\"generate_joke\"])",
+      "options": [{"id": "A", "text": "Once, receiving the whole OverallState"}, {"id": "B", "text": "It fails because the number of edges must be known when the graph is compiled"}, {"id": "C", "text": "Once, with only the last subject"}, {"id": "D", "text": "Three times, each with its own input state such as {\"subject\": \"lions\"}"}],
+      "correctAnswer": ["D"],
+      "explanation": "Each Send creates a separate invocation of the target node with the state given in that Send. This is exactly why Send suits cases where the number of edges is unknown ahead of time.",
+      "tags": ["Send", "Map-reduce"], "technology": "LangGraph", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/use-graph-api"
+    },
+    {
+      "id": "lg_w06_send_q104", "topicId": "lg_w06_send", "type": "MULTIPLE_CHOICE", "difficulty": "INTERMEDIATE",
+      "title": "Which statements explain why Send is used for map-reduce? Select all that apply.",
+      "options": [{"id": "A", "text": "The number of items to process may be unknown until runtime"}, {"id": "B", "text": "Each downstream invocation can receive a different input state"}, {"id": "C", "text": "Every worker needs its own add_edge from the orchestrator declared at build time"}, {"id": "D", "text": "Send objects are returned from a conditional edge function"}],
+      "correctAnswer": ["A", "B", "D"],
+      "explanation": "Send exists for cases where the edges are not known ahead of time and each downstream node needs its own state; it is returned from conditional edges. Declaring one static edge per worker is exactly what Send avoids.",
+      "tags": ["Send", "Map-reduce"], "technology": "LangGraph", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/graph-api"
+    },
+    {
+      "id": "lg_w06_send_q105", "topicId": "lg_w06_send", "type": "SINGLE_CHOICE", "difficulty": "INTERMEDIATE",
+      "title": "In the orchestrator-worker example, completed_sections is declared as Annotated[list, operator.add]. What is the purpose of the reducer?",
+      "options": [{"id": "A", "text": "It makes Send run the workers one after another"}, {"id": "B", "text": "It accumulates the outputs that all workers write to the same key instead of overwriting them"}, {"id": "C", "text": "It is required for Send to be accepted by add_conditional_edges"}, {"id": "D", "text": "It limits how many workers can run"}],
+      "correctAnswer": ["B"],
+      "explanation": "All workers write to this key in parallel, and without a reducer each update would override the previous value. The reducer combines the worker outputs into one list for the synthesizer.",
+      "tags": ["Send", "Reducers"], "technology": "LangGraph", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/workflows-agents"
+    },
+    {
+      "id": "lg_w06_send_q106", "topicId": "lg_w06_send", "type": "SINGLE_CHOICE", "difficulty": "INTERMEDIATE",
+      "title": "Which workflow pattern fits tasks whose subtasks cannot be predefined, and uses Send to create workers dynamically?",
+      "options": [{"id": "A", "text": "Prompt chaining"}, {"id": "B", "text": "Parallelization"}, {"id": "C", "text": "Orchestrator-worker"}, {"id": "D", "text": "Evaluator-optimizer"}],
+      "correctAnswer": ["C"],
+      "explanation": "In orchestrator-worker the orchestrator breaks the task into subtasks, delegates them to workers and synthesizes the results. Parallelization is for subtasks that can be predefined.",
+      "tags": ["Workflow patterns", "Orchestrator-worker"], "technology": "LangGraph", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/workflows-agents"
+    },
+    {
+      "id": "lg_w06_parallel_q101", "topicId": "lg_w06_parallel", "type": "SINGLE_CHOICE", "difficulty": "BEGINNER",
+      "title": "In LangGraph's execution model, what is a super-step?",
+      "options": [{"id": "A", "text": "A single iteration over the graph nodes; nodes running in parallel belong to the same one"}, {"id": "B", "text": "A single call to the LLM inside a node"}, {"id": "C", "text": "A checkpoint saved after the graph ends"}, {"id": "D", "text": "A group of nodes that share the same state schema"}],
+      "correctAnswer": ["A"],
+      "explanation": "Parallel nodes are part of the same super-step while sequential nodes belong to separate super-steps. The recursion limit also counts super-steps.",
+      "tags": ["Supersteps"], "technology": "LangGraph", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/graph-api"
+    },
+    {
+      "id": "lg_w06_parallel_q102", "topicId": "lg_w06_parallel", "type": "SINGLE_CHOICE", "difficulty": "INTERMEDIATE",
+      "title": "Two nodes run in parallel in one superstep and one of them raises an exception. What happens to the state updates of that superstep?",
+      "options": [{"id": "A", "text": "The successful branch's update is applied and only the failed branch is skipped"}, {"id": "B", "text": "None of the updates from that superstep are applied, because the superstep is transactional"}, {"id": "C", "text": "All updates are applied but flagged as stale"}, {"id": "D", "text": "The failed node is silently retried forever"}],
+      "correctAnswer": ["B"],
+      "explanation": "A superstep is transactional: if any parallel branch raises, the whole superstep errors and none of its updates reach the state. Retries only happen if you configure a RetryPolicy.",
+      "tags": ["Supersteps", "Error handling"], "technology": "LangGraph", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/use-graph-api"
+    },
+    {
+      "id": "lg_w06_parallel_q103", "topicId": "lg_w06_parallel", "type": "CODE_READING", "difficulty": "INTERMEDIATE",
+      "title": "When does node d run in this graph?",
+      "codeSnippet": "builder.add_node(\"d\", d, defer=True)\nbuilder.add_edge(START, \"a\")\nbuilder.add_edge(\"a\", \"b\")\nbuilder.add_edge(\"a\", \"c\")\nbuilder.add_edge(\"b\", \"b_2\")\nbuilder.add_edge(\"b_2\", \"d\")\nbuilder.add_edge(\"c\", \"d\")\nbuilder.add_edge(\"d\", END)",
+      "options": [{"id": "A", "text": "In the same superstep as b and c"}, {"id": "B", "text": "Twice: once after c and once after b_2"}, {"id": "C", "text": "Once, only after b, b_2 and c have all finished"}, {"id": "D", "text": "Never, because defer=True is only valid on the last node"}],
+      "correctAnswer": ["C"],
+      "explanation": "defer=True postpones d until there are no pending tasks, so it waits for the longer b branch to finish. Without defer, the branches of different lengths would trigger d more than once.",
+      "tags": ["Defer", "Parallel"], "technology": "LangGraph", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/use-graph-api"
+    },
+    {
+      "id": "lg_w06_parallel_q104", "topicId": "lg_w06_parallel", "type": "DEBUGGING", "difficulty": "ADVANCED",
+      "title": "Node d aggregates results but runs more than once because the branches have different lengths. What is the fix?",
+      "codeSnippet": "builder.add_node(\"d\", d)\nbuilder.add_edge(START, \"a\")\nbuilder.add_edge(\"a\", \"b\")\nbuilder.add_edge(\"a\", \"c\")\nbuilder.add_edge(\"b\", \"b_2\")\nbuilder.add_edge(\"b_2\", \"d\")\nbuilder.add_edge(\"c\", \"d\")\nbuilder.add_edge(\"d\", END)",
+      "options": [{"id": "A", "text": "Set recursion_limit to 3"}, {"id": "B", "text": "Add defer=True when adding node d"}, {"id": "C", "text": "Replace add_edge(\"c\", \"d\") with a Send to d"}, {"id": "D", "text": "Move node d before node a"}],
+      "correctAnswer": ["B"],
+      "explanation": "With separate edges, d runs once per superstep in which an incoming branch completes, so uneven branches make it run repeatedly. Marking d with defer=True makes it wait until every selected branch has finished.",
+      "tags": ["Defer", "Debugging"], "technology": "LangGraph", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/use-graph-api"
+    },
+    {
+      "id": "lg_w06_parallel_q105", "topicId": "lg_w06_parallel", "type": "SINGLE_CHOICE", "difficulty": "ADVANCED",
+      "title": "You use builder.add_edge([\"b_2\", \"c\"], \"d\"), but a conditional edge earlier in the graph never selects the branch containing c. What happens?",
+      "options": [{"id": "A", "text": "d runs after b_2 alone"}, {"id": "B", "text": "d never runs, and no error is raised"}, {"id": "C", "text": "GraphRecursionError is raised"}, {"id": "D", "text": "compile() raises an error"}],
+      "correctAnswer": ["B"],
+      "explanation": "A list of start nodes makes d wait for all of them; if one never runs, d never runs and nothing is reported. Updates from the branches that did complete stay in state but d does not consume them.",
+      "tags": ["Edges", "Defer"], "technology": "LangGraph", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/use-graph-api"
+    },
+    {
+      "id": "lg_w06_parallel_q106", "topicId": "lg_w06_parallel", "type": "MULTIPLE_CHOICE", "difficulty": "INTERMEDIATE",
+      "title": "Which statements about parallel branches in a superstep are correct? Select all that apply.",
+      "options": [{"id": "A", "text": "Updates from a parallel superstep may not be ordered consistently"}, {"id": "B", "text": "A reducer such as operator.add accumulates values from parallel nodes instead of overwriting them"}, {"id": "C", "text": "With a RetryPolicy, only the failing branches are retried"}, {"id": "D", "text": "Parallel updates are always applied in alphabetical order of node names"}],
+      "correctAnswer": ["A", "B", "C"],
+      "explanation": "The docs warn that update order is not guaranteed, so write outputs to a separate field with an ordering value if you need a fixed order. There is no alphabetical ordering guarantee.",
+      "tags": ["Parallel", "Reducers"], "technology": "LangGraph", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/use-graph-api"
+    },
+    {
+      "id": "lg_w06_parallel_q107", "topicId": "lg_w06_parallel", "type": "SINGLE_CHOICE", "difficulty": "ADVANCED",
+      "title": "Node d is added with defer=True, and a Send addressed to d is also issued. What happens to the Send?",
+      "options": [{"id": "A", "text": "It is ignored because d is deferred"}, {"id": "B", "text": "It is merged into the single deferred run of d"}, {"id": "C", "text": "It raises InvalidUpdateError"}, {"id": "D", "text": "It still invokes d separately"}],
+      "correctAnswer": ["D"],
+      "explanation": "defer=True postpones the node until no tasks are pending anywhere in the graph, but a Send addressed to the node still invokes it separately. It does not get folded into the deferred run.",
+      "tags": ["Defer", "Send"], "technology": "LangGraph", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/use-graph-api"
+    },
+    {
+      "id": "lg_w06_loops_q101", "topicId": "lg_w06_loops", "type": "SINGLE_CHOICE", "difficulty": "BEGINNER",
+      "title": "What is the most common way to terminate a loop in a LangGraph graph?",
+      "options": [{"id": "A", "text": "Add a conditional edge that routes to END once a termination condition is met"}, {"id": "B", "text": "Call graph.stop() inside a node"}, {"id": "C", "text": "Return None from any node"}, {"id": "D", "text": "Loops are not allowed in a StateGraph"}],
+      "correctAnswer": ["A"],
+      "explanation": "The docs add a conditional edge that routes to END when a termination condition is reached. Loops are allowed and are how agents alternate between model and tool nodes.",
+      "tags": ["Loops"], "technology": "LangGraph", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/use-graph-api"
+    },
+    {
+      "id": "lg_w06_loops_q102", "topicId": "lg_w06_loops", "type": "SINGLE_CHOICE", "difficulty": "BEGINNER",
+      "title": "Which error does LangGraph raise when a run exceeds its recursion limit?",
+      "options": [{"id": "A", "text": "RecursionError"}, {"id": "B", "text": "TimeoutError"}, {"id": "C", "text": "InvalidUpdateError"}, {"id": "D", "text": "GraphRecursionError"}],
+      "correctAnswer": ["D"],
+      "explanation": "Once the configured number of super-steps is exceeded, LangGraph raises GraphRecursionError, importable from langgraph.errors. It is distinct from Python's built-in RecursionError.",
+      "tags": ["Recursion limit"], "technology": "LangGraph", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/graph-api"
+    },
+    {
+      "id": "lg_w06_loops_q103", "topicId": "lg_w06_loops", "type": "CODE_COMPLETION", "difficulty": "INTERMEDIATE",
+      "title": "Fill in the managed-value type that tracks how many steps remain before the recursion limit.",
+      "codeSnippet": "class State(TypedDict):\n    aggregate: Annotated[list, operator.add]\n    remaining_steps: ______\n\ndef route(state: State) -> Literal[\"b\", END]:\n    return END if state[\"remaining_steps\"] <= 2 else \"b\"",
+      "options": [{"id": "A", "text": "StepCounter"}, {"id": "B", "text": "RecursionLeft"}, {"id": "C", "text": "ManagedStep"}, {"id": "D", "text": "RemainingSteps"}],
+      "correctAnswer": ["D"],
+      "explanation": "RemainingSteps is a managed value that LangGraph populates for the duration of the run. Routing on it lets the graph end gracefully instead of raising GraphRecursionError.",
+      "tags": ["Recursion limit", "RemainingSteps"], "technology": "LangGraph", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/use-graph-api"
+    },
+    {
+      "id": "lg_w06_loops_q104", "topicId": "lg_w06_loops", "type": "DEBUGGING", "difficulty": "ADVANCED",
+      "title": "The developer wants to cap the run at 4 supersteps. What is wrong with how the limit is passed?",
+      "codeSnippet": "try:\n    graph.invoke({\"aggregate\": []}, {\"configurable\": {\"recursion_limit\": 4}})\nexcept GraphRecursionError:\n    print(\"stopped early\")",
+      "options": [{"id": "A", "text": "recursion_limit must be a standalone top-level config key, not nested inside configurable"}, {"id": "B", "text": "recursion_limit must be passed as context= instead of config"}, {"id": "C", "text": "GraphRecursionError cannot be caught with try/except"}, {"id": "D", "text": "The limit must be set in builder.compile() only"}],
+      "correctAnswer": ["A"],
+      "explanation": "The docs state that recursion_limit is a standalone config key and should not be placed inside configurable like other user-defined configuration. The correct call is graph.invoke(inputs, {\"recursion_limit\": 4}).",
+      "tags": ["Recursion limit", "Debugging"], "technology": "LangGraph", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/graph-api"
+    },
+    {
+      "id": "lg_w06_loops_q105", "topicId": "lg_w06_loops", "type": "CODE_READING", "difficulty": "ADVANCED",
+      "title": "What happens when this graph is invoked?",
+      "codeSnippet": "# every node appends its own letter to aggregate\ndef route(state: State) -> Literal[\"b\", END]:\n    return \"b\" if len(state[\"aggregate\"]) < 7 else END\n\nbuilder.add_edge(START, \"a\")\nbuilder.add_conditional_edges(\"a\", route)\nbuilder.add_edge(\"b\", \"c\")\nbuilder.add_edge(\"b\", \"d\")\nbuilder.add_edge([\"c\", \"d\"], \"a\")\ngraph = builder.compile()\ngraph.invoke({\"aggregate\": []}, {\"recursion_limit\": 4})",
+      "options": [{"id": "A", "text": "It returns normally after one lap through a, b, c and d"}, {"id": "B", "text": "It ends silently and returns the partial aggregate"}, {"id": "C", "text": "It raises GraphRecursionError, because one lap takes four supersteps and the termination condition is not yet met"}, {"id": "D", "text": "It finishes after three laps because c and d run in separate supersteps"}],
+      "correctAnswer": ["C"],
+      "explanation": "A lap is a (superstep 1), b (2), c and d in parallel (3), then a again (4), and the aggregate is still shorter than 7 after one lap. The limit of 4 is therefore exceeded and GraphRecursionError is raised.",
+      "tags": ["Recursion limit", "Supersteps"], "technology": "LangGraph", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/use-graph-api"
+    },
+    {
+      "id": "lg_w06_loops_q106", "topicId": "lg_w06_loops", "type": "MULTIPLE_CHOICE", "difficulty": "INTERMEDIATE",
+      "title": "Which are advantages of the proactive RemainingSteps approach over catching GraphRecursionError? Select all that apply.",
+      "options": [{"id": "A", "text": "Graceful degradation inside the graph"}, {"id": "B", "text": "The graph completes normally without raising an exception"}, {"id": "C", "text": "No need to modify the graph logic"}, {"id": "D", "text": "Intermediate state can be saved in checkpoints"}, {"id": "E", "text": "Errors are handled centrally outside the graph in a try/except"}],
+      "correctAnswer": ["A", "B", "D"],
+      "explanation": "Proactive handling routes inside the graph before the limit is hit, so partial results can be returned and checkpointed. Not modifying graph logic and centralized try/except are advantages of the reactive approach.",
+      "tags": ["Recursion limit", "RemainingSteps"], "technology": "LangGraph", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/graph-api"
+    },
+    {
+      "id": "lg_w06_subgraphs_q101", "topicId": "lg_w06_subgraphs", "type": "MULTIPLE_CHOICE", "difficulty": "BEGINNER",
+      "title": "Which statements about using subgraphs are correct? Select all that apply.",
+      "options": [{"id": "A", "text": "A subgraph is a graph used as a node in another graph"}, {"id": "B", "text": "If parent and subgraph share state keys, a compiled subgraph can be passed directly to add_node"}, {"id": "C", "text": "A subgraph must always be compiled with checkpointer=True"}, {"id": "D", "text": "With different state schemas, you call the subgraph inside a node function and transform the state"}],
+      "correctAnswer": ["A", "B", "D"],
+      "explanation": "Shared keys allow adding the compiled subgraph directly, while different schemas need a wrapper node that maps state in and out. The default checkpointer setting is None (per-invocation), not True.",
+      "tags": ["Subgraphs"], "technology": "LangGraph", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/use-subgraphs"
+    },
+    {
+      "id": "lg_w06_subgraphs_q102", "topicId": "lg_w06_subgraphs", "type": "DEBUGGING", "difficulty": "INTERMEDIATE",
+      "title": "The parent and the subgraph share no state keys. What should change?",
+      "codeSnippet": "class SubgraphState(TypedDict):\n    bar: str\n\nclass State(TypedDict):\n    foo: str\n\n# subgraph is a compiled StateGraph(SubgraphState)\nbuilder = StateGraph(State)\nbuilder.add_node(\"node_1\", subgraph)\nbuilder.add_edge(START, \"node_1\")",
+      "options": [{"id": "A", "text": "Add a reducer to foo"}, {"id": "B", "text": "Compile the subgraph with checkpointer=False"}, {"id": "C", "text": "Wrap the call in a node function that maps foo to bar, invokes the subgraph and maps the result back"}, {"id": "D", "text": "Rename START to bar"}],
+      "correctAnswer": ["C"],
+      "explanation": "Passing a compiled subgraph directly only works when it shares keys with the parent. With different schemas, a wrapper node transforms the parent state into the subgraph input and the output back.",
+      "tags": ["Subgraphs", "Debugging"], "technology": "LangGraph", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/use-subgraphs"
+    },
+    {
+      "id": "lg_w06_subgraphs_q103", "topicId": "lg_w06_subgraphs", "type": "DEBUGGING", "difficulty": "ADVANCED",
+      "title": "The subgraph updates a key shared with the parent while navigating to a parent node. What must the parent state define?",
+      "codeSnippet": "class State(TypedDict):\n    foo: str\n\ndef node_a(state: State) -> Command[Literal[\"node_b\"]]:\n    return Command(update={\"foo\": \"a\"}, goto=\"node_b\", graph=Command.PARENT)\n\nsubgraph = StateGraph(State).add_node(node_a).add_edge(START, \"node_a\").compile()\n# node_b lives in the parent graph, which also uses State",
+      "options": [{"id": "A", "text": "A checkpointer on the subgraph"}, {"id": "B", "text": "A context_schema for foo"}, {"id": "C", "text": "A reducer for foo, e.g. Annotated[str, operator.add]"}, {"id": "D", "text": "A static add_edge from node_a to node_b"}],
+      "correctAnswer": ["C"],
+      "explanation": "When a subgraph node sends updates to the parent for a key shared by both schemas via Command.PARENT, the parent must define a reducer for that key. A static edge would be redundant with goto and would run in addition to it.",
+      "tags": ["Command", "Subgraphs"], "technology": "LangGraph", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/use-graph-api"
+    },
+    {
+      "id": "lg_w06_subgraphs_q104", "topicId": "lg_w06_subgraphs", "type": "MULTIPLE_CHOICE", "difficulty": "BEGINNER",
+      "title": "Which of these are valid stream_mode values? Select all that apply.",
+      "options": [{"id": "A", "text": "values"}, {"id": "B", "text": "updates"}, {"id": "C", "text": "trace"}, {"id": "D", "text": "custom"}, {"id": "E", "text": "nodes"}],
+      "correctAnswer": ["A", "B", "D"],
+      "explanation": "values streams the full state after each step, updates streams the per-node state updates, and custom streams data emitted with a stream writer. There are no stream modes named trace or nodes.",
+      "tags": ["Streaming"], "technology": "LangGraph", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/streaming"
+    },
+    {
+      "id": "lg_w06_subgraphs_q105", "topicId": "lg_w06_subgraphs", "type": "SINGLE_CHOICE", "difficulty": "INTERMEDIATE",
+      "title": "What does stream_mode=\"messages\" yield?",
+      "options": [{"id": "A", "text": "The full state after each step"}, {"id": "B", "text": "2-tuples of (LLM token or message chunk, metadata) from LLM calls"}, {"id": "C", "text": "Only the final AIMessage when the graph ends"}, {"id": "D", "text": "Checkpoint events in the format of get_state()"}],
+      "correctAnswer": ["B"],
+      "explanation": "messages mode streams LLM output token by token as (message_chunk, metadata) pairs, and the metadata lets you filter by node or tags. The full state belongs to values mode and checkpoint events to checkpoints mode.",
+      "tags": ["Streaming"], "technology": "LangGraph", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/streaming"
+    },
+    {
+      "id": "lg_w06_subgraphs_q106", "topicId": "lg_w06_subgraphs", "type": "CODE_COMPLETION", "difficulty": "INTERMEDIATE",
+      "title": "Fill in the function that returns a writer for emitting custom stream data from a node.",
+      "codeSnippet": "from langgraph.config import ______\n\ndef node(state: State):\n    writer = ______()\n    writer({\"custom_key\": \"Generating custom data inside node\"})\n    return {\"answer\": \"some data\"}\n\n# consumed with graph.stream(inputs, stream_mode=\"custom\")",
+      "options": [{"id": "A", "text": "get_writer"}, {"id": "B", "text": "get_stream_writer"}, {"id": "C", "text": "stream_writer"}, {"id": "D", "text": "get_custom_stream"}],
+      "correctAnswer": ["B"],
+      "explanation": "get_stream_writer from langgraph.config returns the writer used to emit custom data, which is received when stream_mode includes \"custom\". The other names do not exist in langgraph.config.",
+      "tags": ["Streaming", "Custom"], "technology": "LangGraph", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/streaming"
+    },
+    {
+      "id": "lg_w06_subgraphs_q107", "topicId": "lg_w06_subgraphs", "type": "SINGLE_CHOICE", "difficulty": "ADVANCED",
+      "title": "An agent built with create_agent is added as a node of a parent graph. Streaming the parent with stream_mode=\"messages\" shows no tokens from the inner agent's LLM calls. What fixes it?",
+      "options": [{"id": "A", "text": "Pass subgraphs=True to the parent graph's stream call"}, {"id": "B", "text": "Compile the inner agent with checkpointer=False"}, {"id": "C", "text": "Switch to stream_mode=\"values\""}, {"id": "D", "text": "Add defer=True to the agent node"}],
+      "correctAnswer": ["A"],
+      "explanation": "A compiled agent used as a node is a subgraph, and without subgraphs=True the parent stream does not emit its inner token chunks. Streaming the agent directly would work, which is why the problem only appears after wrapping.",
+      "tags": ["Streaming", "Subgraphs"], "technology": "LangGraph", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/streaming"
+    },
+    {
+      "id": "lg_w06_edges_q101", "topicId": "lg_w06_edges", "type": "SINGLE_CHOICE", "difficulty": "BEGINNER",
+      "title": "How do you make a graph start at different nodes depending on custom logic?",
+      "options": [{"id": "A", "text": "Call add_conditional_edges from the START node"}, {"id": "B", "text": "Call add_edge(END, \"node\") with a lambda"}, {"id": "C", "text": "Add several add_edge(START, ...) calls and compile with entry=None"}, {"id": "D", "text": "Return a Send from the compile() call"}],
+      "correctAnswer": ["A"],
+      "explanation": "A conditional entry point is created with add_conditional_edges(START, routing_function), optionally with a mapping of outputs to node names. Plain add_edge from START is a fixed entry point.",
+      "tags": ["Entry point", "Conditional Edges"], "technology": "LangGraph", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/graph-api"
+    },
+    {
+      "id": "lg_w06_routing_q101", "topicId": "lg_w06_routing", "type": "CODE_READING", "difficulty": "ADVANCED",
+      "title": "Which nodes run after node_a finishes?",
+      "codeSnippet": "def node_a(state: State) -> Command[Literal[\"my_other_node\"]]:\n    return Command(goto=\"my_other_node\")\n\nbuilder.add_node(\"node_a\", node_a)\nbuilder.add_edge(START, \"node_a\")\nbuilder.add_edge(\"node_a\", \"node_b\")",
+      "options": [{"id": "A", "text": "Only my_other_node, because goto overrides static edges"}, {"id": "B", "text": "Only node_b, because static edges take priority"}, {"id": "C", "text": "Neither, because mixing them raises an error at compile time"}, {"id": "D", "text": "Both node_b and my_other_node"}],
+      "correctAnswer": ["D"],
+      "explanation": "Command only adds dynamic edges, so static edges defined with add_edge still execute. For each node, use either Command or static edges to route, not both.",
+      "tags": ["Command", "Edges"], "technology": "LangGraph", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/graph-api"
+    }
+  ]
+}

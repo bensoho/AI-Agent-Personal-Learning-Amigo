@@ -14,7 +14,14 @@ data class ManifestDto(
 data class CourseDto(val id: String, val title: String, val monthNumber: Int, val sortOrder: Int)
 
 @Serializable
-data class ManifestWeekDto(val week: Int, val title: String, val courseId: String, val file: String)
+data class ManifestWeekDto(
+    val week: Int,
+    val title: String,
+    val courseId: String,
+    val file: String,
+    // Additional files whose topics and questions are merged into this week.
+    val extraFiles: List<String> = emptyList(),
+)
 
 @Serializable
 data class WeekFileDto(

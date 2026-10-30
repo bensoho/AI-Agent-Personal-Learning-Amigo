@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "contentVersion": 3,
+  "contentVersion": 4,
   "courses": [
     {"id": "month1", "title": "LangChain", "monthNumber": 1, "sortOrder": 1},
     {"id": "month2", "title": "LangGraph", "monthNumber": 2, "sortOrder": 2},
@@ -8,21 +8,21 @@
     {"id": "month4", "title": "Production", "monthNumber": 4, "sortOrder": 4}
   ],
   "weeks": [
-    {"week": 1, "title": "LLM Fundamentals", "courseId": "month1", "file": "week01.json"},
-    {"week": 2, "title": "Prompt & Structured Output", "courseId": "month1", "file": "week02.json"},
-    {"week": 3, "title": "Tools & Agents", "courseId": "month1", "file": "week03.json"},
-    {"week": 4, "title": "RAG", "courseId": "month1", "file": "week04.json"},
-    {"week": 5, "title": "State & Nodes", "courseId": "month2", "file": "week05.json"},
-    {"week": 6, "title": "Edges & Routing", "courseId": "month2", "file": "week06.json"},
-    {"week": 7, "title": "Persistence & Memory", "courseId": "month2", "file": "week07.json"},
-    {"week": 8, "title": "Human-in-the-loop", "courseId": "month2", "file": "week08.json"},
-    {"week": 9, "title": "Multi-Agent", "courseId": "month3", "file": "week09.json"},
-    {"week": 10, "title": "Agentic RAG", "courseId": "month3", "file": "week10.json"},
-    {"week": 11, "title": "LangSmith Tracing", "courseId": "month3", "file": "week11.json"},
-    {"week": 12, "title": "Evaluation", "courseId": "month3", "file": "week12.json"},
-    {"week": 13, "title": "Production Architecture", "courseId": "month4", "file": "week13.json"},
-    {"week": 14, "title": "Testing & Security", "courseId": "month4", "file": "week14.json"},
-    {"week": 15, "title": "Deployment & Monitoring", "courseId": "month4", "file": "week15.json"},
-    {"week": 16, "title": "Final Project", "courseId": "month4", "file": "week16.json"}
+    {"week": 1, "title": "LLM Fundamentals", "courseId": "month1", "file": "week01.json", "extraFiles": ["week01_more.json"]},
+    {"week": 2, "title": "Prompt & Structured Output", "courseId": "month1", "file": "week02.json", "extraFiles": ["week02_more.json"]},
+    {"week": 3, "title": "Tools & Agents", "courseId": "month1", "file": "week03.json", "extraFiles": ["week03_more.json"]},
+    {"week": 4, "title": "RAG", "courseId": "month1", "file": "week04.json", "extraFiles": ["week04_more.json"]},
+    {"week": 5, "title": "State & Nodes", "courseId": "month2", "file": "week05.json", "extraFiles": ["week05_more.json"]},
+    {"week": 6, "title": "Edges & Routing", "courseId": "month2", "file": "week06.json", "extraFiles": ["week06_more.json"]},
+    {"week": 7, "title": "Persistence & Memory", "courseId": "month2", "file": "week07.json", "extraFiles": ["week07_more.json"]},
+    {"week": 8, "title": "Human-in-the-loop", "courseId": "month2", "file": "week08.json", "extraFiles": ["week08_more.json"]},
+    {"week": 9, "title": "Multi-Agent", "courseId": "month3", "file": "week09.json", "extraFiles": ["week09_more.json"]},
+    {"week": 10, "title": "Agentic RAG", "courseId": "month3", "file": "week10.json", "extraFiles": ["week10_more.json"]},
+    {"week": 11, "title": "LangSmith Tracing", "courseId": "month3", "file": "week11.json", "extraFiles": ["week11_more.json"]},
+    {"week": 12, "title": "Evaluation", "courseId": "month3", "file": "week12.json", "extraFiles": ["week12_more.json"]},
+    {"week": 13, "title": "Production Architecture", "courseId": "month4", "file": "week13.json", "extraFiles": ["week13_more.json"]},
+    {"week": 14, "title": "Testing & Security", "courseId": "month4", "file": "week14.json", "extraFiles": ["week14_more.json"]},
+    {"week": 15, "title": "Deployment & Monitoring", "courseId": "month4", "file": "week15.json", "extraFiles": ["week15_more.json"]},
+    {"week": 16, "title": "Final Project", "courseId": "month4", "file": "week16.json", "extraFiles": ["week16_more.json"]}
   ]
 }

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -145,6 +146,7 @@ fun KnowledgeDetailScreen(
             )
         },
     ) { padding ->
+        SelectionContainer {
         Column(
             Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -165,6 +167,7 @@ fun KnowledgeDetailScreen(
                     Text("练习本知识点（${state.questions.size} 题）")
                 }
             }
+        }
         }
     }
 }

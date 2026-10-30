@@ -1,0 +1,373 @@
+{
+  "schemaVersion": 1,
+  "week": 9,
+  "module": "Agent Engineering",
+  "topics": [
+    {
+      "id": "ae_w09_patterns",
+      "name": "Multi-Agent Patterns and Trade-offs",
+      "description": "Choosing between subagents, handoffs, skills, router and custom workflows.",
+      "notes": [
+        "## 为什么需要 multi-agent",
+        "- 三大诉求：context management（按需提供专业知识）、distributed development（团队独立维护）、parallelization（并行子任务）。",
+        "- 并非所有复杂任务都需要多 agent：配备合适（甚至动态）tools 和 prompt 的单 agent 往往已足够。",
+        "- 多 agent 设计的核心是 context engineering：决定每个 agent 能看到什么信息。",
+        "## 五种模式",
+        "- Subagents：主 agent 把子 agent 当作 tools 调用，所有路由经过主 agent。",
+        "- Handoffs：tools 更新 state 变量（如 current_step / active_agent），触发路由或配置切换。",
+        "- Skills：单个 agent 按需加载专门的 prompt 与知识（progressive disclosure）。",
+        "- Router：路由步骤对输入分类，分发到一个或多个 agent，再合成结果。",
+        "- Custom workflow：用 LangGraph 自定义流程，混合确定性逻辑与 agent。",
+        "## 性能对比（官方示例）",
+        "- 单次请求 'Buy coffee'：Subagents 4 次模型调用，Handoffs / Skills / Router 各 3 次（Subagents 多一次是因为结果要回到主 agent）。",
+        "- 重复请求：Handoffs 与 Skills 第二轮只需 2 次（状态或已加载的 skill 仍在）；Subagents 与 Router 无状态，每次重复完整流程。",
+        "- 多领域对比（每个领域约 2000 tokens）：Subagents 5 次约 9K tokens；Router 5 次约 9K；Skills 3 次约 15K；Handoffs 7+ 次约 14K+（顺序执行）。",
+        "- 并行执行与大上下文领域适合 Subagents / Router；Skills 适合简单、聚焦的任务。",
+        "- 模式可以混合使用，例如 Subagents 中的子 agent 也可以使用 Skills。"
+      ]
+    },
+    {
+      "id": "ae_w09_subagent_tools",
+      "name": "Subagents as Tools",
+      "description": "Wrapping agents as tools: isolation, inputs, outputs, sync vs async and forking.",
+      "notes": [
+        "## Subagents 作为 tools",
+        "- 主 agent（supervisor）通过调用 tools 来协调子 agent，决定调用哪个、传什么输入、如何合并结果。",
+        "- 子 agent 默认无状态：每次调用都在干净的 context window 中运行，避免主对话的 context 膨胀。",
+        "- 子 agent 把结果返回给主 agent，而不是直接回复用户；需要用户交互时可在子 agent 内使用 interrupt。",
+        "- 主 agent 可以在一个 turn 内调用多个子 agent（并行执行）。",
+        "```python",
+        "@tool(\"research\", description=\"Research a topic\")",
+        "def call_research_agent(query: str):",
+        "    result = subagent.invoke({\"messages\": [{\"role\": \"user\", \"content\": query}]})",
+        "    return result[\"messages\"][-1].content",
+        "```",
+        "## 设计选择",
+        "- Tool per agent：每个子 agent 一个 tool，对输入输出控制更细。",
+        "- Single dispatch tool：一个 task(agent_name, description) tool，适合 agent 多、团队分布式开发。",
+        "- 子 agent 的 name 和 description 是主 agent 选择它的主要依据；agent 超过 10 个时可用 list_agents 做 tool-based discovery。",
+        "- 输入：只传任务描述 = 隔离；传 runtime.state[\"messages\"] = 带上父级历史。",
+        "- 输出：子 agent 的 final message 是主 agent 唯一看到的内容，要在 prompt 里要求写入结果；也可用 Command 同时回传 state key。",
+        "- Sync：主 agent 等待结果；Async：启动 job、查询状态、取结果（三 tool 模式）。",
+        "- Deep Agents：通过 task tool 委派；mode 为 isolated（默认）或 fork（继承父级对话历史，且不能再调用 task）。",
+        "- 子 agent 在 tool 内被调用时，get_state(subgraphs=True) 看不到其状态。"
+      ]
+    },
+    {
+      "id": "ae_w09_handoff_context",
+      "name": "Handoff Context Correctness",
+      "description": "ToolMessage pairing, Command.PARENT and context filtering when agents hand off.",
+      "notes": [
+        "## Handoffs 的 context 正确性",
+        "- Handoff tool 返回 Command 更新 state（如 current_step / active_agent），触发行为切换。",
+        "- LLM 调用 tool 后期望得到响应：必须有 tool_call_id 匹配的 ToolMessage，否则对话历史格式不合法。",
+        "```python",
+        "return Command(",
+        "    goto=\"sales_agent\",",
+        "    update={",
+        "        \"active_agent\": \"sales_agent\",",
+        "        \"messages\": [last_ai_message, transfer_message],",
+        "    },",
+        "    graph=Command.PARENT,",
+        ")",
+        "```",
+        "- 使用 Command.PARENT 在子图 agent 之间交接时，要同时传：触发交接的 AIMessage + 确认交接的 ToolMessage。",
+        "- 不要传整个子 agent 的消息历史：会引入无关推理、增加 token；需要更多上下文时在 ToolMessage 内容里写摘要。",
+        "- 把控制权还给用户时，最后一条消息应是 AIMessage。",
+        "## 实现方式",
+        "- Single agent + middleware：用 wrap_model_call 按 current_step 覆盖 system prompt 和 tools，多数场景更简单。",
+        "- Multiple agent subgraphs：每个 agent 是图中的节点，需要精细的 context engineering；适合复杂的定制 agent。",
+        "- 设计时考虑：context 过滤策略、tool 语义（只更新路由还是带副作用）、token 效率。"
+      ]
+    },
+    {
+      "id": "ae_w09_router_workflow",
+      "name": "Router, Custom Workflows and Subgraphs",
+      "description": "Router with Send, custom LangGraph workflows and subgraph persistence modes.",
+      "notes": [
+        "## Router",
+        "- Router 对输入分类，把请求分发给一个或多个专门 agent（零个或多个并行），再把结果合成。",
+        "- 单个 agent 用 Command(goto=...)；并行扇出到多个 agent 用 Send。",
+        "```python",
+        "def route_query(state: State):",
+        "    classifications = classify_query(state[\"query\"])",
+        "    return [Send(c[\"agent\"], {\"query\": c[\"query\"]}) for c in classifications]",
+        "```",
+        "- Stateless router：每次请求独立路由；有状态需求时最简单的做法是把 router 包成 tool，交给对话 agent 管理记忆。",
+        "- 与 supervisor 的区别：router 通常是单次分类步骤，不维护多轮对话；supervisor 是完整 agent，跨多轮动态决策。",
+        "## Custom workflow 与 subgraph",
+        "- Custom workflow 用 LangGraph 完全控制图结构：顺序、条件、循环、并行；节点可以是函数、LLM 调用或完整 agent。",
+        "- 子图与父图共享 state key：直接把编译后的子图传给 add_node；schema 不同：在节点函数里调用子图并转换状态。",
+        "## 子图持久化（checkpointer）",
+        "- None（默认，per-invocation）：每次调用从头开始，仍支持 interrupt。",
+        "- True（per-thread）：跨调用累积记忆；不支持对同一子图的并行调用。",
+        "- False（stateless）：像普通函数调用，无 interrupt、无 durable execution。",
+        "- 父图必须带 checkpointer，子图持久化功能才可用。"
+      ]
+    }
+  ],
+  "questions": [
+    {
+      "id": "ae_w09_patterns_q101", "topicId": "ae_w09_patterns", "type": "SINGLE_CHOICE", "difficulty": "BEGINNER",
+      "title": "In which multi-agent pattern does a single agent stay in control while loading specialized prompts and knowledge on demand?",
+      "options": [{"id": "A", "text": "Router"}, {"id": "B", "text": "Skills"}, {"id": "C", "text": "Handoffs"}, {"id": "D", "text": "Subagents"}],
+      "correctAnswer": ["B"],
+      "explanation": "The skills pattern keeps one agent in control and loads specialized prompts through progressive disclosure. Subagents instead delegate work to separate agents called as tools.",
+      "tags": ["Skills", "Multi-Agent"], "technology": "LangChain", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/multi-agent"
+    },
+    {
+      "id": "ae_w09_patterns_q102", "topicId": "ae_w09_patterns", "type": "MULTIPLE_CHOICE", "difficulty": "BEGINNER",
+      "title": "Which capabilities does the multi-agent overview list as the usual reasons developers look for multi-agent patterns?",
+      "options": [{"id": "A", "text": "Context management"}, {"id": "B", "text": "Distributed development"}, {"id": "C", "text": "Parallelization"}, {"id": "D", "text": "Guaranteed lower cost than a single agent"}, {"id": "E", "text": "Removing the need for tools"}],
+      "correctAnswer": ["A", "B", "C"],
+      "explanation": "The docs name context management, distributed development and parallelization. They also note that a single agent with the right tools and prompt can often achieve similar results, so multi-agent is not automatically cheaper.",
+      "tags": ["Multi-Agent", "Architecture"], "technology": "LangChain", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/multi-agent"
+    },
+    {
+      "id": "ae_w09_patterns_q103", "topicId": "ae_w09_patterns", "type": "SINGLE_CHOICE", "difficulty": "INTERMEDIATE",
+      "title": "In the one-shot 'Buy coffee' comparison, subagents need 4 model calls while handoffs, skills and router need 3. Why does subagents need one more?",
+      "options": [{"id": "A", "text": "A separate routing model must classify the request first"}, {"id": "B", "text": "Each subagent reloads its skill prompt before acting"}, {"id": "C", "text": "Results flow back through the main agent, which adds one extra call"}, {"id": "D", "text": "Subagents cannot call tools directly"}],
+      "correctAnswer": ["C"],
+      "explanation": "The docs say subagents adds one extra call because results return through the main agent, and that this overhead buys centralized control.",
+      "tags": ["Subagents", "Performance"], "technology": "LangChain", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/multi-agent"
+    },
+    {
+      "id": "ae_w09_patterns_q104", "topicId": "ae_w09_patterns", "type": "SINGLE_CHOICE", "difficulty": "INTERMEDIATE",
+      "title": "On the repeat request ('Buy coffee again'), handoffs and skills need only 2 model calls on turn 2. Why?",
+      "options": [{"id": "A", "text": "They cache the final answer and skip the model entirely"}, {"id": "B", "text": "They run the tool without any model call"}, {"id": "C", "text": "They route through a stateless LLM router before acting"}, {"id": "D", "text": "The active agent or loaded skill context persists, so no handoff or reload is needed"}],
+      "correctAnswer": ["D"],
+      "explanation": "Handoffs keep the coffee agent active in state and skills keep the skill in conversation history. Subagents and router are stateless and repeat the full flow.",
+      "tags": ["Handoffs", "Skills", "Performance"], "technology": "LangChain", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/multi-agent"
+    },
+    {
+      "id": "ae_w09_patterns_q105", "topicId": "ae_w09_patterns", "type": "SINGLE_CHOICE", "difficulty": "ADVANCED",
+      "title": "For 'Compare Python, JavaScript, and Rust for web development' (each domain about 2000 tokens of docs), which pattern does the overview call inefficient, and why?",
+      "options": [{"id": "A", "text": "Subagents, because each subagent shares the main agent's full context"}, {"id": "B", "text": "Handoffs, because it runs sequentially and cannot consult the three domains in parallel"}, {"id": "C", "text": "Router, because it cannot invoke agents in parallel"}, {"id": "D", "text": "Skills, because it needs more than 7 model calls"}],
+      "correctAnswer": ["B"],
+      "explanation": "Handoffs needs 7+ calls and about 14K+ tokens because it executes sequentially with growing history. Skills uses only 3 calls, and subagents and router run in parallel.",
+      "tags": ["Handoffs", "Performance"], "technology": "LangChain", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/multi-agent"
+    },
+    {
+      "id": "ae_w09_patterns_q106", "topicId": "ae_w09_patterns", "type": "MULTIPLE_CHOICE", "difficulty": "ADVANCED",
+      "title": "Which statements match the multi-domain comparison results in the multi-agent overview?",
+      "options": [{"id": "A", "text": "Subagents uses about 9K tokens because each subagent works in isolation with only its relevant context"}, {"id": "B", "text": "Skills makes only 3 calls but about 15K tokens, because loaded skill docs are reprocessed on every later call"}, {"id": "C", "text": "Router uses an LLM for routing and then invokes the agents in parallel, for about 9K tokens"}, {"id": "D", "text": "Handoffs is the cheapest at about 5K tokens"}],
+      "correctAnswer": ["A", "B", "C"],
+      "explanation": "Isolation keeps subagents and router near 9K tokens, while skills accumulates context. Handoffs is the least efficient here at 7+ calls and about 14K+ tokens.",
+      "tags": ["Performance", "Context"], "technology": "LangChain", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/multi-agent"
+    },
+    {
+      "id": "ae_w09_subagent_tools_q101", "topicId": "ae_w09_subagent_tools", "type": "CODE_READING", "difficulty": "BEGINNER",
+      "title": "What does the main agent receive when it calls the research tool?",
+      "codeSnippet": "subagent = create_agent(model=\"...\", tools=[search])\n\n@tool(\"research\", description=\"Research a topic and return findings\")\ndef call_research_agent(query: str):\n    result = subagent.invoke(\n        {\"messages\": [{\"role\": \"user\", \"content\": query}]}\n    )\n    return result[\"messages\"][-1].content\n\nmain_agent = create_agent(model=\"...\", tools=[call_research_agent])",
+      "options": [{"id": "A", "text": "The subagent's full message history"}, {"id": "B", "text": "Only the content of the subagent's final message"}, {"id": "C", "text": "The list of tool calls the subagent made"}, {"id": "D", "text": "Nothing, because the subagent replies to the user directly"}],
+      "correctAnswer": ["B"],
+      "explanation": "The tool returns result[\"messages\"][-1].content, so only the final message flows back to the main agent. This is what gives each subagent call context isolation.",
+      "tags": ["Subagents", "Context Isolation"], "technology": "LangChain", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/multi-agent/subagents"
+    },
+    {
+      "id": "ae_w09_subagent_tools_q102", "topicId": "ae_w09_subagent_tools", "type": "CODE_COMPLETION", "difficulty": "INTERMEDIATE",
+      "title": "Fill the blank so the subagent is seeded with the parent's prior messages instead of only the task description.",
+      "codeSnippet": "@tool(\"continue_review\", description=\"Continue a PR review\")\ndef call_reviewer(query: str, runtime: ToolRuntime[None, AgentState]):\n    result = reviewer.invoke({\n        \"messages\": ______,\n    })\n    return result[\"messages\"][-1].content",
+      "options": [{"id": "A", "text": "[{\"role\": \"user\", \"content\": query}]"}, {"id": "B", "text": "query"}, {"id": "C", "text": "[]"}, {"id": "D", "text": "runtime.state[\"messages\"]"}],
+      "correctAnswer": ["D"],
+      "explanation": "Passing the parent's message history seeds the subagent with prior work. Passing only the query keeps it isolated but forces it to re-derive what the parent already did.",
+      "tags": ["Subagents", "Context Engineering"], "technology": "LangChain", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/multi-agent/subagents"
+    },
+    {
+      "id": "ae_w09_subagent_tools_q104", "topicId": "ae_w09_subagent_tools", "type": "DEBUGGING", "difficulty": "INTERMEDIATE",
+      "title": "The main agent keeps saying the research tool returned no findings, even though the subagent ran several searches. What is the bug?",
+      "codeSnippet": "researcher = create_agent(\n    model=\"...\",\n    tools=[web_search],\n    system_prompt=\"Use web_search to investigate. When finished, reply 'Done.'\",\n)\n\n@tool(\"research\", description=\"Research a topic\")\ndef call_researcher(query: str):\n    result = researcher.invoke(\n        {\"messages\": [{\"role\": \"user\", \"content\": query}]}\n    )\n    return result[\"messages\"][-1].content",
+      "options": [{"id": "A", "text": "The subagent's final message is all the main agent sees, so the prompt must make it include the findings"}, {"id": "B", "text": "invoke must be replaced with ainvoke"}, {"id": "C", "text": "Subagents are not allowed to use tools such as web_search"}, {"id": "D", "text": "The research tool needs checkpointer=True"}],
+      "correctAnswer": ["A"],
+      "explanation": "The docs warn that a subagent may do tool calls but omit results from its final message, while the supervisor only sees that final output. Here the prompt tells it to reply only 'Done.'.",
+      "tags": ["Subagents", "Debugging"], "technology": "LangChain", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/multi-agent/subagents"
+    },
+    {
+      "id": "ae_w09_subagent_tools_q105", "topicId": "ae_w09_subagent_tools", "type": "MULTIPLE_CHOICE", "difficulty": "INTERMEDIATE",
+      "title": "Which statements about synchronous vs asynchronous subagent execution are correct?",
+      "options": [{"id": "A", "text": "In a synchronous call the main agent waits for the subagent to finish before continuing"}, {"id": "B", "text": "The asynchronous approach uses a start-job, check-status and get-result tool trio"}, {"id": "C", "text": "Async here means the subagent must be written with Python async/await"}, {"id": "D", "text": "Sync fits cases where the main agent's next action depends on the subagent's result"}, {"id": "E", "text": "Async subagents block the conversation until the job completes"}],
+      "correctAnswer": ["A", "B", "D"],
+      "explanation": "Async means the main agent starts a background job and stays responsive, which is not the same as Python async/await. Blocking the conversation is the drawback of sync.",
+      "tags": ["Subagents", "Async"], "technology": "LangChain", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/multi-agent/subagents"
+    },
+    {
+      "id": "ae_w09_subagent_tools_q106", "topicId": "ae_w09_subagent_tools", "type": "SINGLE_CHOICE", "difficulty": "ADVANCED",
+      "title": "A subagent compiled with checkpointer=True (per-thread persistence) is wrapped as a tool, and the model calls it twice in parallel. What do the subgraph docs warn about?",
+      "options": [{"id": "A", "text": "Each call gets its own checkpoint namespace, so parallel calls are safe"}, {"id": "B", "text": "LangGraph silently drops the second call"}, {"id": "C", "text": "Both calls write to the same namespace and cause checkpoint conflicts, so parallel calls must be prevented"}, {"id": "D", "text": "Interrupts stop working, so checkpointer=False is required"}],
+      "correctAnswer": ["C"],
+      "explanation": "Per-thread subgraphs do not support parallel tool calls. The docs prevent this with ToolCallLimitMiddleware or by disabling parallel tool calling, whereas the default per-invocation mode runs safely in parallel.",
+      "tags": ["Subgraphs", "Persistence", "Parallel"], "technology": "LangGraph", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/use-subgraphs"
+    },
+    {
+      "id": "ae_w09_subagent_tools_q108", "topicId": "ae_w09_subagent_tools", "type": "CODE_READING", "difficulty": "ADVANCED",
+      "title": "What does this subagent tool return to the parent graph?",
+      "codeSnippet": "@tool(\"analyze\", description=\"Run the analysis subagent\")\ndef call_analyst(\n    query: str,\n    tool_call_id: Annotated[str, InjectedToolCallId],\n) -> Command:\n    result = analyst.invoke(\n        {\"messages\": [{\"role\": \"user\", \"content\": query}]}\n    )\n    return Command(update={\n        \"report\": result[\"report\"],\n        \"messages\": [ToolMessage(\n            content=result[\"messages\"][-1].content,\n            tool_call_id=tool_call_id,\n        )],\n    })",
+      "options": [{"id": "A", "text": "A Command that writes the subagent's report key into the parent state and answers the tool call with a ToolMessage holding the final text"}, {"id": "B", "text": "A plain string with the subagent's final message"}, {"id": "C", "text": "A Command that routes to another node with goto"}, {"id": "D", "text": "A Command that replaces the parent's whole message history with the subagent's messages"}],
+      "correctAnswer": ["A"],
+      "explanation": "Formatting output in code lets you pass extra state keys back besides the final text. The ToolMessage with the injected tool_call_id keeps the tool-call pairing valid.",
+      "tags": ["Subagents", "Command", "State"], "technology": "LangChain", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/multi-agent/subagents"
+    },
+    {
+      "id": "ae_w09_subagent_tools_q109", "topicId": "ae_w09_subagent_tools", "type": "SINGLE_CHOICE", "difficulty": "ADVANCED",
+      "title": "Why does get_state(config, subgraphs=True) not return state for a subagent invoked inside a tool function, and what do the docs suggest if you need it?",
+      "options": [{"id": "A", "text": "LangGraph cannot statically discover it, so invoke the subagent from a node function in a custom graph"}, {"id": "B", "text": "Subagents always use checkpointer=False, so switch them to True"}, {"id": "C", "text": "Subagents lack a messages key, so switch to MessagesState"}, {"id": "D", "text": "Interrupts cannot propagate out of tools, so use Send instead"}],
+      "correctAnswer": ["A"],
+      "explanation": "Viewing subgraph state needs the subgraph to be statically discoverable, as a node or called inside a node. Calls hidden inside tools, as in the subagents pattern, are not.",
+      "tags": ["Subagents", "Subgraphs", "State"], "technology": "LangGraph", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/multi-agent/subagents"
+    },
+    {
+      "id": "ae_w09_subagent_tools_q110", "topicId": "ae_w09_subagent_tools", "type": "MULTIPLE_CHOICE", "difficulty": "INTERMEDIATE",
+      "title": "Which statements about Deep Agents subagent context modes are correct?",
+      "options": [{"id": "A", "text": "A forked subagent receives the parent's conversation history plus the delegated task"}, {"id": "B", "text": "The default mode is isolated, where the subagent sees only the delegated task"}, {"id": "C", "text": "A forked subagent can still call the task tool to delegate further"}, {"id": "D", "text": "Isolated custom subagents inherit the parent's system prompt automatically"}],
+      "correctAnswer": ["A", "B"],
+      "explanation": "Isolated is the default and requires its own system prompt, while fork inherits the parent's history. A fork cannot use task and must finish the work itself.",
+      "tags": ["Deep Agents", "Subagents", "Fork"], "technology": "LangChain", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/deepagents/subagents"
+    },
+    {
+      "id": "ae_w09_handoff_context_q101", "topicId": "ae_w09_handoff_context", "type": "DEBUGGING", "difficulty": "ADVANCED",
+      "title": "After this handoff, the receiving agent sees a tool call with no matching response and behaves erratically. What should be added?",
+      "codeSnippet": "@tool\ndef transfer_to_sales(runtime: ToolRuntime) -> Command:\n    \"\"\"Transfer to the sales agent.\"\"\"\n    return Command(\n        goto=\"sales_agent\",\n        update={\"active_agent\": \"sales_agent\"},\n        graph=Command.PARENT,\n    )",
+      "options": [{"id": "A", "text": "A messages update with the AIMessage that made the tool call and a ToolMessage using runtime.tool_call_id"}, {"id": "B", "text": "Replace goto with END"}, {"id": "C", "text": "Remove graph=Command.PARENT"}, {"id": "D", "text": "Pass the entire subagent message history in update"}],
+      "correctAnswer": ["A"],
+      "explanation": "With Command.PARENT the docs require both the triggering AIMessage and a ToolMessage acknowledging the handoff. Passing the whole subagent history is discouraged because it adds irrelevant reasoning and tokens.",
+      "tags": ["Handoff", "ToolMessage", "Debugging"], "technology": "LangChain", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/multi-agent/handoffs"
+    },
+    {
+      "id": "ae_w09_handoff_context_q102", "topicId": "ae_w09_handoff_context", "type": "CODE_COMPLETION", "difficulty": "INTERMEDIATE",
+      "title": "Fill the blank so the handoff, issued from inside an agent subgraph, navigates to a node in the parent graph.",
+      "codeSnippet": "return Command(\n    goto=\"support_agent\",\n    update={\n        \"active_agent\": \"support_agent\",\n        \"messages\": [last_ai_message, transfer_message],\n    },\n    graph=______,\n)",
+      "options": [{"id": "A", "text": "END"}, {"id": "B", "text": "None"}, {"id": "C", "text": "\"support_agent\""}, {"id": "D", "text": "Command.PARENT"}],
+      "correctAnswer": ["D"],
+      "explanation": "Handoff tools in the multiple-agent-subgraphs approach use Command.PARENT to pick which parent-graph node runs next.",
+      "tags": ["Handoff", "Command.PARENT"], "technology": "LangChain", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/multi-agent/handoffs"
+    },
+    {
+      "id": "ae_w09_handoff_context_q103", "topicId": "ae_w09_handoff_context", "type": "SINGLE_CHOICE", "difficulty": "BEGINNER",
+      "title": "Why should a handoff tool that updates messages include a ToolMessage with a matching tool_call_id?",
+      "options": [{"id": "A", "text": "It tells LangGraph which node to run next"}, {"id": "B", "text": "It deletes earlier messages to save tokens"}, {"id": "C", "text": "It completes the tool call's request-response cycle so the history stays well-formed"}, {"id": "D", "text": "It lets the handoff skip the checkpointer"}],
+      "correctAnswer": ["C"],
+      "explanation": "An LLM expects a response to every tool call it makes, and without the ToolMessage the conversation history becomes malformed. Routing is done by Command, not by the message.",
+      "tags": ["Handoff", "ToolMessage"], "technology": "LangChain", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/multi-agent/handoffs"
+    },
+    {
+      "id": "ae_w09_handoff_context_q104", "topicId": "ae_w09_handoff_context", "type": "SINGLE_CHOICE", "difficulty": "INTERMEDIATE",
+      "title": "Why does the transfer_to_sales example pass only [last_ai_message, transfer_message] instead of the whole subagent conversation?",
+      "options": [{"id": "A", "text": "LangGraph rejects message lists longer than two"}, {"id": "B", "text": "The full history can confuse the receiving agent with irrelevant reasoning and costs more tokens; summarize in the ToolMessage if more context is needed"}, {"id": "C", "text": "Checkpoints cannot store more than two messages"}, {"id": "D", "text": "The receiving agent cannot read long ToolMessage content"}],
+      "correctAnswer": ["B"],
+      "explanation": "Passing only the handoff pair keeps the parent context focused on high-level coordination. The docs suggest summarizing the subagent's work in the ToolMessage if the receiver needs more.",
+      "tags": ["Handoff", "Context Engineering"], "technology": "LangChain", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/multi-agent/handoffs"
+    },
+    {
+      "id": "ae_w09_handoff_context_q105", "topicId": "ae_w09_handoff_context", "type": "SINGLE_CHOICE", "difficulty": "BEGINNER",
+      "title": "Which handoffs implementation approach do the docs recommend for most use cases because it is simpler?",
+      "options": [{"id": "A", "text": "Multiple agent subgraphs using Command.PARENT"}, {"id": "B", "text": "A single agent with middleware that changes its prompt and tools based on state"}, {"id": "C", "text": "A router that fans out with Send"}, {"id": "D", "text": "A skills agent using load_skill"}],
+      "correctAnswer": ["B"],
+      "explanation": "The docs recommend a single agent with middleware for most handoffs. Use subgraphs only when you need bespoke agent implementations, such as a node that is itself a complex graph.",
+      "tags": ["Handoff", "Middleware"], "technology": "LangChain", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/multi-agent/handoffs"
+    },
+    {
+      "id": "ae_w09_handoff_context_q106", "topicId": "ae_w09_handoff_context", "type": "CODE_READING", "difficulty": "INTERMEDIATE",
+      "title": "What does this middleware do on every model call?",
+      "codeSnippet": "@wrap_model_call\ndef apply_step_config(request: ModelRequest, handler) -> ModelResponse:\n    step = request.state.get(\"current_step\", \"triage\")\n    configs = {\n        \"triage\": {\"prompt\": \"Collect warranty info\", \"tools\": [record_warranty_status]},\n        \"specialist\": {\"prompt\": \"Provide solutions\", \"tools\": [provide_solution]},\n    }\n    config = configs[step]\n    request = request.override(\n        system_prompt=config[\"prompt\"], tools=config[\"tools\"]\n    )\n    return handler(request)",
+      "options": [{"id": "A", "text": "It summarizes the message history before each call"}, {"id": "B", "text": "It routes execution to a separate agent node"}, {"id": "C", "text": "It reads current_step from state and overrides the system prompt and tools for that step"}, {"id": "D", "text": "It persists current_step to the checkpointer"}],
+      "correctAnswer": ["C"],
+      "explanation": "In the single-agent handoff approach, middleware intercepts each model call and applies a step-specific prompt and tool set. Tools change current_step to trigger the transition.",
+      "tags": ["Handoff", "Middleware"], "technology": "LangChain", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/multi-agent/handoffs"
+    },
+    {
+      "id": "ae_w09_handoff_context_q109", "topicId": "ae_w09_handoff_context", "type": "CODE_READING", "difficulty": "ADVANCED",
+      "title": "When does this routing function end the graph?",
+      "codeSnippet": "def route_after_agent(state) -> str:\n    messages = state.get(\"messages\", [])\n    if messages:\n        last_msg = messages[-1]\n        if isinstance(last_msg, AIMessage) and not last_msg.tool_calls:\n            return \"__end__\"\n    return state.get(\"active_agent\") or \"sales_agent\"",
+      "options": [{"id": "A", "text": "When the last message is an AIMessage with no tool calls, meaning the agent finished without a handoff"}, {"id": "B", "text": "Whenever active_agent is unset"}, {"id": "C", "text": "After exactly one agent turn"}, {"id": "D", "text": "When the last message is a ToolMessage"}],
+      "correctAnswer": ["A"],
+      "explanation": "An AIMessage without tool calls is a final reply to the user, so the graph ends. Otherwise the function routes to the active agent, which keeps handoffs flowing.",
+      "tags": ["Handoff", "Routing", "Termination"], "technology": "LangChain", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/multi-agent/handoffs"
+    },
+    {
+      "id": "ae_w09_router_workflow_q101", "topicId": "ae_w09_router_workflow", "type": "SINGLE_CHOICE", "difficulty": "BEGINNER",
+      "title": "Which LangGraph primitive does the router pattern use to fan out to several specialized agents in parallel?",
+      "options": [{"id": "A", "text": "Send"}, {"id": "B", "text": "Command.PARENT"}, {"id": "C", "text": "interrupt"}, {"id": "D", "text": "add_edge"}],
+      "correctAnswer": ["A"],
+      "explanation": "Router docs use Send for parallel fan-out and Command for routing to a single agent.",
+      "tags": ["Router", "Send"], "technology": "LangGraph", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/multi-agent/router"
+    },
+    {
+      "id": "ae_w09_router_workflow_q102", "topicId": "ae_w09_router_workflow", "type": "CODE_READING", "difficulty": "INTERMEDIATE",
+      "title": "What does this router function do?",
+      "codeSnippet": "def route_query(state: State):\n    classifications = classify_query(state[\"query\"])\n    return [\n        Send(c[\"agent\"], {\"query\": c[\"query\"]})\n        for c in classifications\n    ]",
+      "options": [{"id": "A", "text": "It routes to a single agent chosen by the classifier"}, {"id": "B", "text": "It runs the classified agents one after another"}, {"id": "C", "text": "It only updates the state without routing"}, {"id": "D", "text": "It fans out in parallel to each classified agent with its own sub-query"}],
+      "correctAnswer": ["D"],
+      "explanation": "Returning a list of Send objects dispatches to every selected agent in parallel, each with its own input. Results are then synthesized.",
+      "tags": ["Router", "Send", "Parallel"], "technology": "LangGraph", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/multi-agent/router"
+    },
+    {
+      "id": "ae_w09_router_workflow_q103", "topicId": "ae_w09_router_workflow", "type": "MULTIPLE_CHOICE", "difficulty": "INTERMEDIATE",
+      "title": "Which statements correctly distinguish a router from a supervisor (subagents pattern)?",
+      "options": [{"id": "A", "text": "A router is typically a dedicated routing step, such as one LLM call or rule-based logic, that classifies input and dispatches"}, {"id": "B", "text": "A supervisor is a full agent that keeps conversation context and decides which subagents to call across multiple turns"}, {"id": "C", "text": "A router normally keeps multi-turn history and orchestrates multi-step workflows itself"}, {"id": "D", "text": "A router fits clear input categories and lightweight classification, while a supervisor fits flexible conversation-aware orchestration"}],
+      "correctAnswer": ["A", "B", "D"],
+      "explanation": "The router is usually a stateless preprocessing step and does not maintain ongoing conversation state. That multi-turn orchestration is the supervisor's job.",
+      "tags": ["Router", "Supervisor"], "technology": "LangChain", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/multi-agent/router"
+    },
+    {
+      "id": "ae_w09_router_workflow_q105", "topicId": "ae_w09_router_workflow", "type": "SINGLE_CHOICE", "difficulty": "BEGINNER",
+      "title": "What can a node in a custom LangGraph workflow be?",
+      "options": [{"id": "A", "text": "Only a compiled agent"}, {"id": "B", "text": "A simple function, an LLM call, or an entire agent with tools"}, {"id": "C", "text": "Only a deterministic function"}, {"id": "D", "text": "Only another StateGraph"}],
+      "correctAnswer": ["B"],
+      "explanation": "Custom workflows mix deterministic logic and agentic behavior, and you can even embed other multi-agent patterns as a single node.",
+      "tags": ["Custom Workflow", "LangGraph"], "technology": "LangGraph", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/multi-agent/custom-workflow"
+    },
+    {
+      "id": "ae_w09_router_workflow_q106", "topicId": "ae_w09_router_workflow", "type": "CODE_COMPLETION", "difficulty": "BEGINNER",
+      "title": "The parent graph and the subgraph share state keys. Fill the blank to add the subgraph as a node.",
+      "codeSnippet": "subgraph = subgraph_builder.compile()\n\nbuilder = StateGraph(State)\nbuilder.add_node(\"node_1\", ______)\nbuilder.add_edge(START, \"node_1\")\ngraph = builder.compile()",
+      "options": [{"id": "A", "text": "subgraph_builder"}, {"id": "B", "text": "subgraph.invoke"}, {"id": "C", "text": "subgraph"}, {"id": "D", "text": "\"subgraph\""}],
+      "correctAnswer": ["C"],
+      "explanation": "With shared state keys you pass the compiled subgraph directly to add_node and need no wrapper function. The uncompiled builder is not a runnable node.",
+      "tags": ["Subgraphs", "State"], "technology": "LangGraph", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/use-subgraphs"
+    },
+    {
+      "id": "ae_w09_router_workflow_q107", "topicId": "ae_w09_router_workflow", "type": "SINGLE_CHOICE", "difficulty": "INTERMEDIATE",
+      "title": "A parent graph and a subgraph have different state schemas with no shared keys, for example to keep a private message history per agent. How should the subgraph be used?",
+      "options": [{"id": "A", "text": "Call it inside a node function that maps parent state to subgraph input and the result back"}, {"id": "B", "text": "Pass it directly to add_node"}, {"id": "C", "text": "Merge both schemas into a single TypedDict"}, {"id": "D", "text": "Compile it with checkpointer=False"}],
+      "correctAnswer": ["A"],
+      "explanation": "Different schemas need a wrapper node that transforms state in both directions. Passing the subgraph directly works only when the schemas share keys.",
+      "tags": ["Subgraphs", "State"], "technology": "LangGraph", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/use-subgraphs"
+    },
+    {
+      "id": "ae_w09_router_workflow_q108", "topicId": "ae_w09_router_workflow", "type": "SINGLE_CHOICE", "difficulty": "ADVANCED",
+      "title": "What is the consequence of compiling a subgraph with checkpointer=False?",
+      "options": [{"id": "A", "text": "It remembers earlier calls across the same thread"}, {"id": "B", "text": "Each invocation inherits the parent's checkpointer for interrupts"}, {"id": "C", "text": "get_state(subgraphs=True) shows its accumulated state"}, {"id": "D", "text": "It runs like a plain function call with no interrupts or durable execution, so a crash means re-running from the start"}],
+      "correctAnswer": ["D"],
+      "explanation": "False means stateless: no checkpointing, so no interrupt() and no recovery after a crash. The default None keeps per-invocation checkpointing, and True gives per-thread memory.",
+      "tags": ["Subgraphs", "Persistence"], "technology": "LangGraph", "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/use-subgraphs"
+    }
+  ]
+}

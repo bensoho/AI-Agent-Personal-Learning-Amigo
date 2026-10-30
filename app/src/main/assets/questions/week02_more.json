@@ -1,0 +1,669 @@
+{
+  "schemaVersion": 1,
+  "week": 2,
+  "module": "LangChain",
+  "topics": [
+    {
+      "id": "lc_w02_prompt_patterns",
+      "name": "Prompt Patterns",
+      "description": "MessagesPlaceholder, partial variables, single-variable input and few-shot chat prompts.",
+      "notes": [
+        "## Prompt 进阶用法",
+        "- ChatPromptTemplate 的 messages 可以是 (type, template) 二元组、BaseMessage、BaseMessagePromptTemplate，或字符串（等价于 human 消息）。",
+        "- MessagesPlaceholder 用来插入一整段消息列表，例如对话历史。",
+        "- 默认 optional=False：必须传入同名参数（空列表也可以），否则报 KeyError。",
+        "- optional=True 时可以省略该参数；(\"placeholder\", \"{conversation}\") 是等价的简写。",
+        "```python",
+        "from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder",
+        "",
+        "prompt = ChatPromptTemplate.from_messages([",
+        "    (\"system\", \"You are a helpful assistant.\"),",
+        "    MessagesPlaceholder(\"history\"),",
+        "    (\"human\", \"{question}\"),",
+        "])",
+        "```",
+        "## Partial 与单变量输入",
+        "- partial_variables 或 .partial(...) 可以预先填入部分变量，调用时不必每次再传。",
+        "- 模板只有一个输入变量时，可以直接 invoke 一个非 dict 的值，它会被注入到该变量的位置。",
+        "## Few-shot",
+        "- FewShotChatMessagePromptTemplate 生成的消息列表由前缀消息、示例消息、后缀消息组成。",
+        "- 示例可以是固定列表，也可以根据输入动态选择。",
+        "- 角色、语气和规则等长期指令应放在 SystemMessage 中。"
+      ]
+    },
+    {
+      "id": "lc_w02_structured_methods",
+      "name": "with_structured_output Methods",
+      "description": "Schema types, method options and include_raw for model-level structured output.",
+      "notes": [
+        "## with_structured_output 的选项",
+        "- 支持三种 schema：Pydantic、TypedDict、JSON Schema。",
+        "- Pydantic 功能最全（字段校验、描述、嵌套），并提供自动校验。",
+        "- TypedDict 更简单，适合不需要运行时校验的场景；TypedDict 与 JSON Schema 需要手动校验。",
+        "```python",
+        "structured = model.with_structured_output(",
+        "    json_schema,",
+        "    method=\"json_schema\",",
+        ")",
+        "```",
+        "## method 参数",
+        "- 'json_schema'：使用服务商专门提供的结构化输出能力。",
+        "- 'function_calling'：通过强制一次符合 schema 的 tool call 得到结构化输出。",
+        "- 'json_mode'：json_schema 的前身，保证输出合法 JSON，但 schema 必须写在提示词里。",
+        "- 具体支持哪些 method 取决于服务商的集成页面。",
+        "## include_raw",
+        "- include_raw=True 时返回 dict：raw（AIMessage）、parsed（解析结果）、parsing_error。",
+        "```python",
+        "structured = model.with_structured_output(Movie, include_raw=True)",
+        "res = structured.invoke(\"Provide details about the movie Inception\")",
+        "res[\"raw\"], res[\"parsed\"], res[\"parsing_error\"]",
+        "```",
+        "- raw 消息中包含 token 数等响应元数据。"
+      ]
+    },
+    {
+      "id": "lc_w02_agent_output",
+      "name": "Agent response_format",
+      "description": "create_agent response_format, ProviderStrategy, ToolStrategy and error handling.",
+      "notes": [
+        "## create_agent 的 response_format",
+        "- 可选值：ToolStrategy、ProviderStrategy、schema 类型、None。",
+        "- 结构化结果保存在 agent 最终状态的 structured_response 键中。",
+        "- 直接传 schema 类型时：模型和服务商支持原生结构化输出则用 ProviderStrategy，否则用 ToolStrategy。",
+        "- JSON Schema 字典不会被自动识别，必须显式包装成 ProviderStrategy 或 ToolStrategy。",
+        "```python",
+        "from langchain.agents import create_agent",
+        "from langchain.agents.structured_output import ToolStrategy",
+        "",
+        "agent = create_agent(",
+        "    model=\"gpt-5.5\",",
+        "    tools=[],",
+        "    response_format=ToolStrategy(ProductRating, handle_errors=True),",
+        ")",
+        "```",
+        "## ProviderStrategy 与 ToolStrategy",
+        "- ProviderStrategy 使用服务商原生能力，由服务商强制 schema；strict 参数需要 langchain>=1.2，默认 None（关闭）。",
+        "- Pydantic 返回校验后的实例；dataclass、TypedDict、JSON Schema 返回 dict。",
+        "- ToolStrategy 通过 tool calling 实现，支持 Union 类型；handle_errors 默认 True，校验失败时把错误反馈给模型重试。",
+        "- handle_errors 可以是 bool、str、异常类型、异常类型元组、回调函数；False 表示不重试，直接抛出异常。",
+        "## Chain 中的解析错误",
+        "- prompt | model | parser 这样的链没有内置的解析重试，handle_errors 只作用于 create_agent。",
+        "- 可以改用 with_structured_output，或用 langchain-classic 的 OutputFixingParser 包装 parser。"
+      ]
+    },
+    {
+      "id": "lc_w02_lcel_compose",
+      "name": "Runnable Composition",
+      "description": "RunnableParallel, RunnablePassthrough.assign, RunnableLambda and batching.",
+      "notes": [
+        "## Runnable 组合",
+        "- RunnableParallel 把同一个输入同时交给多个 Runnable，返回以键名为索引的 dict。",
+        "- 在序列里写 dict 字面量，会被自动转换成 RunnableParallel。",
+        "```python",
+        "from langchain_core.runnables import RunnableLambda",
+        "",
+        "add_one = RunnableLambda(lambda x: x + 1)",
+        "seq = add_one | {",
+        "    \"mul_two\": RunnableLambda(lambda x: x * 2),",
+        "    \"mul_three\": RunnableLambda(lambda x: x * 3),",
+        "}",
+        "seq.invoke(1)  # {'mul_two': 4, 'mul_three': 6}",
+        "```",
+        "- RunnablePassthrough 原样传递输入；.assign(...) 在保留输入 dict 的同时增加新键。",
+        "- RunnableLambda 把 Python 可调用对象变成 Runnable，适合不需要流式的代码；",
+        "  需要按 chunk 处理流时应使用 RunnableGenerator。",
+        "- RunnableLambda 若返回 Runnable，该 Runnable 会被继续执行（或流式执行）。",
+        "## batch 与 stream",
+        "- batch() 在客户端并行处理多个独立请求，不同于服务商自己的 Batch API。",
+        "- config={\"max_concurrency\": 5} 可限制并行调用数量。",
+        "- batch_as_completed() 每个结果完成就返回，顺序可能乱，结果带有输入下标。",
+        "- stream() 返回 AIMessageChunk，chunk 可以用 + 累加成完整消息。"
+      ]
+    }
+  ],
+  "questions": [
+    {
+      "id": "lc_w02_prompt_patterns_q101",
+      "topicId": "lc_w02_prompt_patterns",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "A template contains MessagesPlaceholder(\"history\") with the default settings. What must you do when invoking it?",
+      "options": [
+        {"id": "A", "text": "Nothing; the placeholder is skipped automatically when the key is missing"},
+        {"id": "B", "text": "Pass a list of messages under \"history\", even if it is an empty list"},
+        {"id": "C", "text": "Pass a single string under \"history\""},
+        {"id": "D", "text": "Set n_messages on the template first"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "With the default optional=False the named argument must be supplied, otherwise a KeyError is raised. Only optional=True lets you omit it.",
+      "tags": ["MessagesPlaceholder", "ChatPromptTemplate"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://reference.langchain.com/python/langchain-core/prompts/chat/MessagesPlaceholder"
+    },
+    {
+      "id": "lc_w02_prompt_patterns_q102",
+      "topicId": "lc_w02_prompt_patterns",
+      "type": "CODE_READING",
+      "difficulty": "INTERMEDIATE",
+      "title": "How many messages does value.messages contain?",
+      "codeSnippet": "prompt = ChatPromptTemplate.from_messages([\n    (\"system\", \"You are a helpful assistant.\"),\n    MessagesPlaceholder(\"history\"),\n    (\"human\", \"{question}\"),\n])\nvalue = prompt.invoke({\n    \"history\": [(\"human\", \"what's 5 + 2\"), (\"ai\", \"5 + 2 is 7\")],\n    \"question\": \"now multiply that by 4\",\n})\nprint(len(value.messages))",
+      "options": [
+        {"id": "A", "text": "3, because the placeholder counts as one message"},
+        {"id": "B", "text": "4: the system message, the two history messages and the human question"},
+        {"id": "C", "text": "2, because history replaces the system message"},
+        {"id": "D", "text": "5, because each history entry adds two messages"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "The placeholder is expanded in place into the messages it receives. Here that gives system, human, ai and the final human message.",
+      "tags": ["MessagesPlaceholder", "Chat History"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://reference.langchain.com/python/langchain-core/prompts/chat/MessagesPlaceholder"
+    },
+    {
+      "id": "lc_w02_prompt_patterns_q103",
+      "topicId": "lc_w02_prompt_patterns",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "In ChatPromptTemplate, what does the entry (\"placeholder\", \"{conversation}\") mean?",
+      "options": [
+        {"id": "A", "text": "A required string variable named conversation"},
+        {"id": "B", "text": "A partial variable that is filled once at construction time"},
+        {"id": "C", "text": "An optional list of messages passed under the \"conversation\" key"},
+        {"id": "D", "text": "A system message that contains the word conversation"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "It is shorthand for MessagesPlaceholder(variable_name=\"conversation\", optional=True). A plain string variable would use a human or system tuple instead.",
+      "tags": ["MessagesPlaceholder", "ChatPromptTemplate"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://reference.langchain.com/python/langchain-core/prompts/chat/ChatPromptTemplate"
+    },
+    {
+      "id": "lc_w02_prompt_patterns_q104",
+      "topicId": "lc_w02_prompt_patterns",
+      "type": "CODE_COMPLETION",
+      "difficulty": "INTERMEDIATE",
+      "title": "Which method pre-fills the lang variable so that invoke only needs question?",
+      "codeSnippet": "prompt = ChatPromptTemplate.from_messages([\n    (\"system\", \"Answer in {lang}.\"),\n    (\"human\", \"{question}\"),\n]).______(lang=\"French\")\nprompt.invoke({\"question\": \"What is LCEL?\"})",
+      "options": [
+        {"id": "A", "text": "append"},
+        {"id": "B", "text": "save"},
+        {"id": "C", "text": "partial"},
+        {"id": "D", "text": "bind"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "partial() fills some template variables up front, matching the partial_variables concept. append() adds a message to the template and save() writes it to disk.",
+      "tags": ["Partial Variables", "ChatPromptTemplate"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://reference.langchain.com/python/langchain-core/prompts/chat/ChatPromptTemplate"
+    },
+    {
+      "id": "lc_w02_prompt_patterns_q105",
+      "topicId": "lc_w02_prompt_patterns",
+      "type": "CODE_READING",
+      "difficulty": "BEGINNER",
+      "title": "What is the content of the last message in value.messages?",
+      "codeSnippet": "template = ChatPromptTemplate([\n    (\"system\", \"You are a helpful AI bot. Your name is Carl.\"),\n    (\"human\", \"{user_input}\"),\n])\nvalue = template.invoke(\"Hello, there!\")\nprint(value.messages[-1].content)",
+      "options": [
+        {"id": "A", "text": "A TypeError is raised because invoke needs a dict"},
+        {"id": "B", "text": "\"{user_input}\""},
+        {"id": "C", "text": "\"Hello, there!\""},
+        {"id": "D", "text": "\"You are a helpful AI bot. Your name is Carl.\""}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "With only one input variable, a non-dict argument is injected into that variable. So invoke(\"Hello, there!\") is equivalent to passing {\"user_input\": \"Hello, there!\"}.",
+      "tags": ["ChatPromptTemplate", "Input Variables"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://reference.langchain.com/python/langchain-core/prompts/chat/ChatPromptTemplate"
+    },
+    {
+      "id": "lc_w02_prompt_patterns_q106",
+      "topicId": "lc_w02_prompt_patterns",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "Which of these can be used as an entry in the messages list of ChatPromptTemplate?",
+      "options": [
+        {"id": "A", "text": "A 2-tuple such as (\"human\", \"{user_input}\")"},
+        {"id": "B", "text": "A plain string such as \"{user_input}\", shorthand for a human message"},
+        {"id": "C", "text": "A BaseMessagePromptTemplate such as MessagesPlaceholder"},
+        {"id": "D", "text": "A bare integer that selects a stored message by index"}
+      ],
+      "correctAnswer": ["A", "B", "C"],
+      "explanation": "The documented message representations include templates, BaseMessage objects, (type, template) tuples and strings. An integer index is not a supported form.",
+      "tags": ["ChatPromptTemplate"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://reference.langchain.com/python/langchain-core/prompts/chat/ChatPromptTemplate"
+    },
+    {
+      "id": "lc_w02_prompt_patterns_q107",
+      "topicId": "lc_w02_prompt_patterns",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "What structure does FewShotChatMessagePromptTemplate produce?",
+      "options": [
+        {"id": "A", "text": "A single string that joins all examples"},
+        {"id": "B", "text": "A fine-tuned model checkpoint"},
+        {"id": "C", "text": "A list of messages made of prefix, example and suffix messages"},
+        {"id": "D", "text": "Only the example messages, without any prefix or suffix"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "It builds a conversation in which example human/AI turns sit between the prefix and suffix messages. It does not train anything.",
+      "tags": ["Few-shot", "ChatPromptTemplate"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://reference.langchain.com/python/langchain-core/prompts/few_shot/FewShotChatMessagePromptTemplate"
+    },
+    {
+      "id": "lc_w02_structured_methods_q101",
+      "topicId": "lc_w02_structured_methods",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "Which schema type does the Models guide say offers the richest feature set for with_structured_output (validation, descriptions, nested structures)?",
+      "options": [
+        {"id": "A", "text": "TypedDict"},
+        {"id": "B", "text": "A JSON Schema dictionary"},
+        {"id": "C", "text": "A plain Python dict of field names"},
+        {"id": "D", "text": "Pydantic models"}
+      ],
+      "correctAnswer": ["D"],
+      "explanation": "Pydantic models provide field validation, descriptions and nested structures. TypedDict is a simpler alternative without runtime validation.",
+      "tags": ["Structured Output", "Pydantic"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/models"
+    },
+    {
+      "id": "lc_w02_structured_methods_q102",
+      "topicId": "lc_w02_structured_methods",
+      "type": "CODE_READING",
+      "difficulty": "INTERMEDIATE",
+      "title": "The model returns valid data for the Movie schema. What does this print?",
+      "codeSnippet": "structured = model.with_structured_output(Movie, include_raw=True)\nres = structured.invoke(\"Provide details about the movie Inception\")\nprint(res[\"parsing_error\"])",
+      "options": [
+        {"id": "A", "text": "An empty string"},
+        {"id": "B", "text": "None"},
+        {"id": "C", "text": "False"},
+        {"id": "D", "text": "A KeyError, because the result is a Movie object"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "With include_raw=True the result is a dict with raw, parsed and parsing_error keys. When parsing succeeds, parsing_error is None.",
+      "tags": ["Structured Output", "include_raw"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/models"
+    },
+    {
+      "id": "lc_w02_structured_methods_q103",
+      "topicId": "lc_w02_structured_methods",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "Which statements about schema types for with_structured_output are correct?",
+      "options": [
+        {"id": "A", "text": "Pydantic models give automatic validation"},
+        {"id": "B", "text": "TypedDict and JSON Schema require manual validation"},
+        {"id": "C", "text": "A TypedDict schema returns a Pydantic instance"},
+        {"id": "D", "text": "A JSON Schema dict can be passed together with method=\"json_schema\""}
+      ],
+      "correctAnswer": ["A", "B", "D"],
+      "explanation": "The docs state Pydantic validates automatically while TypedDict and JSON Schema need manual validation. A TypedDict schema yields a plain dict, not a Pydantic object.",
+      "tags": ["Structured Output", "Schema Types"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/models"
+    },
+    {
+      "id": "lc_w02_structured_methods_q104",
+      "topicId": "lc_w02_structured_methods",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "What does method=\"function_calling\" do in with_structured_output?",
+      "options": [
+        {"id": "A", "text": "It derives structured output by forcing a tool call that follows the given schema"},
+        {"id": "B", "text": "It uses the provider's dedicated structured output feature"},
+        {"id": "C", "text": "It only produces valid JSON and expects the schema to be described in the prompt"},
+        {"id": "D", "text": "It executes your Python functions to build the answer"}
+      ],
+      "correctAnswer": ["A"],
+      "explanation": "function_calling forces a tool call matching the schema. Option B describes json_schema and option C describes json_mode.",
+      "tags": ["Structured Output", "Tool Calling"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/models"
+    },
+    {
+      "id": "lc_w02_structured_methods_q105",
+      "topicId": "lc_w02_structured_methods",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "ADVANCED",
+      "title": "Which statement about method=\"json_mode\" is correct?",
+      "options": [
+        {"id": "A", "text": "It generates valid JSON, but the schema has to be described in the prompt"},
+        {"id": "B", "text": "It enforces the schema server-side through the provider's schema feature"},
+        {"id": "C", "text": "It works by forcing a tool call and needs no prompt instructions"},
+        {"id": "D", "text": "It returns the raw AIMessage together with the parsed output"}
+      ],
+      "correctAnswer": ["A"],
+      "explanation": "json_mode is a precursor to json_schema offered by some providers: valid JSON is generated but the schema must be described in the prompt. Returning the raw message is the job of include_raw.",
+      "tags": ["Structured Output", "json_mode"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/models"
+    },
+    {
+      "id": "lc_w02_structured_methods_q106",
+      "topicId": "lc_w02_structured_methods",
+      "type": "CODE_COMPLETION",
+      "difficulty": "INTERMEDIATE",
+      "title": "Fill in the blank so that the provider's dedicated structured output feature is used with a JSON Schema dict.",
+      "codeSnippet": "model_with_structure = model.with_structured_output(\n    json_schema,\n    method=\"______\",\n)\nresponse = model_with_structure.invoke(\"Provide details about the movie Inception\")",
+      "options": [
+        {"id": "A", "text": "function_calling"},
+        {"id": "B", "text": "json_mode"},
+        {"id": "C", "text": "json_schema"},
+        {"id": "D", "text": "pydantic"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "'json_schema' uses the provider's dedicated structured output feature, as in the JSON Schema example in the docs. 'pydantic' is not a method value.",
+      "tags": ["Structured Output", "JSON Schema"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/models"
+    },
+    {
+      "id": "lc_w02_structured_methods_q107",
+      "topicId": "lc_w02_structured_methods",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "ADVANCED",
+      "title": "You need token counts for a with_structured_output call. How do you get them next to the parsed result?",
+      "options": [
+        {"id": "A", "text": "Pass include_raw=True and read the metadata on the raw AIMessage"},
+        {"id": "B", "text": "Read them from the Pydantic object, which always has a usage field"},
+        {"id": "C", "text": "Switch to method=\"json_mode\", which adds token counts"},
+        {"id": "D", "text": "Call the model twice, once with and once without a schema"}
+      ],
+      "correctAnswer": ["A"],
+      "explanation": "include_raw=True returns the raw AIMessage along with the parsed output, so response metadata such as token counts stays accessible. The parsed schema object only holds your own fields.",
+      "tags": ["Structured Output", "include_raw", "Token Usage"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/models"
+    },
+    {
+      "id": "lc_w02_agent_output_q101",
+      "topicId": "lc_w02_agent_output",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "With create_agent and response_format, where is the structured result found?",
+      "options": [
+        {"id": "A", "text": "In the structured_response key of the agent's final state"},
+        {"id": "B", "text": "In result[\"parsed\"]"},
+        {"id": "C", "text": "In the content of the first message"},
+        {"id": "D", "text": "In a file next to the script"}
+      ],
+      "correctAnswer": ["A"],
+      "explanation": "The structured response is captured, validated and returned under structured_response. The parsed key belongs to with_structured_output(include_raw=True) instead.",
+      "tags": ["create_agent", "response_format"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/structured-output"
+    },
+    {
+      "id": "lc_w02_agent_output_q102",
+      "topicId": "lc_w02_agent_output",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "You pass a Pydantic class directly as response_format to create_agent. Which strategy does LangChain choose?",
+      "options": [
+        {"id": "A", "text": "Always ToolStrategy"},
+        {"id": "B", "text": "ProviderStrategy if the model and provider support native structured output, otherwise ToolStrategy"},
+        {"id": "C", "text": "Always ProviderStrategy"},
+        {"id": "D", "text": "No strategy; the schema is only added to the system prompt"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "A schema type triggers automatic selection based on model capabilities. Native support gives ProviderStrategy, everything else falls back to ToolStrategy.",
+      "tags": ["response_format", "ProviderStrategy", "ToolStrategy"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/structured-output"
+    },
+    {
+      "id": "lc_w02_agent_output_q103",
+      "topicId": "lc_w02_agent_output",
+      "type": "DEBUGGING",
+      "difficulty": "ADVANCED",
+      "title": "The schema below is a JSON Schema dict, but the agent does not use it as intended. What is the fix?",
+      "codeSnippet": "schema = {\n    \"title\": \"ContactInfo\",\n    \"description\": \"Contact information.\",\n    \"type\": \"object\",\n    \"properties\": {\"name\": {\"type\": \"string\"}},\n    \"required\": [\"name\"],\n}\nagent = create_agent(\n    model=\"gpt-5.5\",\n    tools=[],\n    response_format=schema,\n)",
+      "options": [
+        {"id": "A", "text": "Remove the title key"},
+        {"id": "B", "text": "Pass strict=True to create_agent"},
+        {"id": "C", "text": "Convert the dict to a string with json.dumps"},
+        {"id": "D", "text": "Wrap it, for example response_format=ProviderStrategy(schema)"}
+      ],
+      "correctAnswer": ["D"],
+      "explanation": "JSON Schema dictionaries are not auto-detected when passed directly to response_format. They must be wrapped in an explicit ProviderStrategy or ToolStrategy.",
+      "tags": ["response_format", "JSON Schema", "Debugging"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/structured-output"
+    },
+    {
+      "id": "lc_w02_agent_output_q104",
+      "topicId": "lc_w02_agent_output",
+      "type": "CODE_READING",
+      "difficulty": "INTERMEDIATE",
+      "title": "What type is result[\"structured_response\"]?",
+      "codeSnippet": "@dataclass\nclass ContactInfo:\n    name: str\n    email: str\n\nagent = create_agent(model=\"gpt-5.5\", tools=[], response_format=ContactInfo)\nresult = agent.invoke({\"messages\": [{\"role\": \"user\", \"content\": \"John Doe, john@example.com\"}]})\nprint(type(result[\"structured_response\"]).__name__)",
+      "options": [
+        {"id": "A", "text": "ContactInfo"},
+        {"id": "B", "text": "BaseModel"},
+        {"id": "C", "text": "AIMessage"},
+        {"id": "D", "text": "dict"}
+      ],
+      "correctAnswer": ["D"],
+      "explanation": "Per the docs, dataclass schemas return a dict, while only Pydantic models return a validated instance of the class.",
+      "tags": ["response_format", "Dataclass"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/structured-output"
+    },
+    {
+      "id": "lc_w02_agent_output_q105",
+      "topicId": "lc_w02_agent_output",
+      "type": "CODE_READING",
+      "difficulty": "ADVANCED",
+      "title": "During structured output generation a RuntimeError is raised. What happens with this configuration?",
+      "codeSnippet": "response_format = ToolStrategy(\n    schema=ProductRating,\n    handle_errors=(ValueError, TypeError),\n)\nagent = create_agent(\n    model=\"gpt-5.5\",\n    tools=[],\n    response_format=response_format,\n)",
+      "options": [
+        {"id": "A", "text": "The agent retries using the default error message"},
+        {"id": "B", "text": "The error is swallowed and structured_response is None"},
+        {"id": "C", "text": "The RuntimeError is raised, because only the listed exception types trigger a retry"},
+        {"id": "D", "text": "The tuple is invalid and fails when the agent is created"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "A tuple of exception types makes the agent retry only for those types, and any other exception is raised. Retrying on every error is what handle_errors=True does.",
+      "tags": ["ToolStrategy", "handle_errors"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/structured-output"
+    },
+    {
+      "id": "lc_w02_agent_output_q106",
+      "topicId": "lc_w02_agent_output",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "ADVANCED",
+      "title": "Which are documented ways to deal with malformed model output in a chain like prompt | model | parser?",
+      "options": [
+        {"id": "A", "text": "Bind the schema with model.with_structured_output"},
+        {"id": "B", "text": "Wrap the parser in OutputFixingParser from langchain-classic"},
+        {"id": "C", "text": "Rely on ToolStrategy handle_errors, which retries automatically inside any pipe chain"},
+        {"id": "D", "text": "Rely on the chain's built-in parsing retry"}
+      ],
+      "correctAnswer": ["A", "B"],
+      "explanation": "Chains built with the pipe operator have no built-in retry for parsing failures, and handle_errors only applies to create_agent. Use native structured output or OutputFixingParser instead.",
+      "tags": ["Output Parsers", "OutputFixingParser"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/structured-output"
+    },
+    {
+      "id": "lc_w02_agent_output_q107",
+      "topicId": "lc_w02_agent_output",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "ADVANCED",
+      "title": "What is true about the strict parameter of ProviderStrategy?",
+      "options": [
+        {"id": "A", "text": "It defaults to True and works with every provider"},
+        {"id": "B", "text": "It makes ToolStrategy skip validation"},
+        {"id": "C", "text": "It defaults to None (disabled), is supported by some providers such as OpenAI and xAI, and requires langchain>=1.2"},
+        {"id": "D", "text": "It only affects Pydantic schemas and is ignored for JSON Schema"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "strict is an optional boolean for strict schema adherence that defaults to None. Only some providers support it and it needs langchain>=1.2.",
+      "tags": ["ProviderStrategy", "strict"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/structured-output"
+    },
+    {
+      "id": "lc_w02_agent_output_q108",
+      "topicId": "lc_w02_agent_output",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "Which values are accepted for the handle_errors parameter of ToolStrategy?",
+      "options": [
+        {"id": "A", "text": "A string, used as a fixed retry message"},
+        {"id": "B", "text": "A tuple of exception types"},
+        {"id": "C", "text": "A callable that takes the exception and returns a message string"},
+        {"id": "D", "text": "A dict mapping exception names to retry counts"}
+      ],
+      "correctAnswer": ["A", "B", "C"],
+      "explanation": "The docs list bool, str, an exception type, a tuple of exception types and a Callable[[Exception], str]. A dict of retry counts is not supported.",
+      "tags": ["ToolStrategy", "handle_errors"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/structured-output"
+    },
+    {
+      "id": "lc_w02_lcel_compose_q101",
+      "topicId": "lc_w02_lcel_compose",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "What does RunnableParallel do with its input?",
+      "options": [
+        {"id": "A", "text": "It splits the input into equal parts, one per branch"},
+        {"id": "B", "text": "It runs the branches one after another, each using the previous output"},
+        {"id": "C", "text": "It gives the same input to every branch, runs them concurrently and returns a mapping of their outputs"},
+        {"id": "D", "text": "It runs only the first branch that succeeds"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "RunnableParallel provides the same input to each Runnable and returns their outputs in a dict. Sequential chaining is the job of RunnableSequence.",
+      "tags": ["RunnableParallel", "LCEL"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://reference.langchain.com/python/langchain-core/runnables/base/RunnableParallel"
+    },
+    {
+      "id": "lc_w02_lcel_compose_q102",
+      "topicId": "lc_w02_lcel_compose",
+      "type": "CODE_READING",
+      "difficulty": "INTERMEDIATE",
+      "title": "What does sequence.invoke(1) return?",
+      "codeSnippet": "runnable_1 = RunnableLambda(lambda x: x + 1)\nrunnable_2 = RunnableLambda(lambda x: x * 2)\nrunnable_3 = RunnableLambda(lambda x: x * 3)\n\nsequence = runnable_1 | {\n    \"mul_two\": runnable_2,\n    \"mul_three\": runnable_3,\n}\nprint(sequence.invoke(1))",
+      "options": [
+        {"id": "A", "text": "{'mul_two': 4, 'mul_three': 6}"},
+        {"id": "B", "text": "{'mul_two': 2, 'mul_three': 3}"},
+        {"id": "C", "text": "[4, 6]"},
+        {"id": "D", "text": "A TypeError, because a dict cannot be piped"}
+      ],
+      "correctAnswer": ["A"],
+      "explanation": "The dict literal is coerced into a RunnableParallel. Both branches receive 2 (the output of the first step) and return 4 and 6.",
+      "tags": ["RunnableParallel", "RunnableLambda", "LCEL"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://reference.langchain.com/python/langchain-core/runnables/base/RunnableParallel"
+    },
+    {
+      "id": "lc_w02_lcel_compose_q103",
+      "topicId": "lc_w02_lcel_compose",
+      "type": "CODE_READING",
+      "difficulty": "ADVANCED",
+      "title": "What does this chain print?",
+      "codeSnippet": "def fake_llm(prompt: str) -> str:\n    return \"completion\"\n\nrunnable = {\n    \"llm1\": fake_llm,\n    \"llm2\": fake_llm,\n} | RunnablePassthrough.assign(\n    total_chars=lambda inputs: len(inputs[\"llm1\"] + inputs[\"llm2\"])\n)\nprint(runnable.invoke(\"hello\"))",
+      "options": [
+        {"id": "A", "text": "{'total_chars': 20}"},
+        {"id": "B", "text": "{'llm1': 'completion', 'llm2': 'completion', 'total_chars': 20}"},
+        {"id": "C", "text": "{'llm1': 'completion', 'llm2': 'completion', 'total_chars': 10}"},
+        {"id": "D", "text": "hello"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "assign() keeps the incoming dict and adds the new key. total_chars is the length of 'completioncompletion', which is 20, and a bare assign does not drop llm1 or llm2.",
+      "tags": ["RunnablePassthrough", "assign", "LCEL"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://reference.langchain.com/python/langchain-core/runnables/passthrough/RunnablePassthrough"
+    },
+    {
+      "id": "lc_w02_lcel_compose_q104",
+      "topicId": "lc_w02_lcel_compose",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "ADVANCED",
+      "title": "A custom step must operate on chunks of a stream and yield chunks. Which class does the RunnableLambda reference recommend instead of RunnableLambda?",
+      "options": [
+        {"id": "A", "text": "RunnableParallel"},
+        {"id": "B", "text": "RunnableGenerator"},
+        {"id": "C", "text": "RunnablePassthrough"},
+        {"id": "D", "text": "RunnableSequence"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "RunnableLambda is best suited for code that does not need to support streaming. RunnableGenerator is the documented choice for transforming chunks of input into chunks of output.",
+      "tags": ["RunnableLambda", "Streaming", "LCEL"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://reference.langchain.com/python/langchain-core/runnables/base/RunnableLambda"
+    },
+    {
+      "id": "lc_w02_lcel_compose_q105",
+      "topicId": "lc_w02_lcel_compose",
+      "type": "CODE_COMPLETION",
+      "difficulty": "BEGINNER",
+      "title": "Which RunnableConfig key limits batch() to 5 parallel calls?",
+      "codeSnippet": "model.batch(\n    list_of_inputs,\n    config={\"______\": 5},\n)",
+      "options": [
+        {"id": "A", "text": "max_workers"},
+        {"id": "B", "text": "batch_size"},
+        {"id": "C", "text": "max_concurrency"},
+        {"id": "D", "text": "recursion_limit"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "max_concurrency controls the maximum number of parallel calls for batch() and batch_as_completed(). recursion_limit bounds chain depth, not parallelism.",
+      "tags": ["batch", "RunnableConfig"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/models"
+    },
+    {
+      "id": "lc_w02_lcel_compose_q106",
+      "topicId": "lc_w02_lcel_compose",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "Which statements about model.batch() and model.batch_as_completed() are correct?",
+      "options": [
+        {"id": "A", "text": "batch() parallelizes the calls on the client side"},
+        {"id": "B", "text": "batch() calls the provider's own Batch API, such as OpenAI's"},
+        {"id": "C", "text": "batch_as_completed() yields each result as it finishes, possibly out of order, with the input index"},
+        {"id": "D", "text": "batch() requires the model to be in streaming mode"}
+      ],
+      "correctAnswer": ["A", "C"],
+      "explanation": "batch() is client-side parallelism and is distinct from provider batch APIs. batch_as_completed() yields results as they complete, so each one carries its input index for reordering.",
+      "tags": ["batch", "batch_as_completed"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/models"
+    }
+  ]
+}

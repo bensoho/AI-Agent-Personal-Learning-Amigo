@@ -3,6 +3,7 @@ package com.agentlearning.feature.settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -33,6 +34,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -54,6 +58,7 @@ private fun SettingsCard(title: String, content: @Composable ColumnScope.() -> U
 }
 
 private const val GOAL_STEP = 5
+private const val AUTHOR_EMAIL = "bensoho.liu@gmail.com"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -61,6 +66,11 @@ fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewMo
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var confirmReset by remember { mutableStateOf(false) }
     var fontSlider by remember(state.fontScale) { mutableFloatStateOf(state.fontScale) }
+    val uriHandler = LocalUriHandler.current
+    val context = LocalContext.current
+    val versionName = remember {
+        runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "-"
+    }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -156,6 +166,27 @@ fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewMo
             SettingsCard("危险操作") {
                 OutlinedButton(onClick = { confirmReset = true }, modifier = Modifier.fillMaxWidth()) {
                     Text("重置本地学习数据", color = MaterialTheme.colorScheme.error)
+                }
+            }
+
+            SettingsCard("关于") {
+                Text("Agent Learning", style = MaterialTheme.typography.titleSmall)
+                Text("版本：$versionName")
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Author")
+                    Text(
+                        AUTHOR_EMAIL,
+                        color = MaterialTheme.colorScheme.primary,
+                        textDecoration = TextDecoration.Underline,
+                        modifier = Modifier.clickable {
+                            // No mail app installed makes openUri throw; ignore it.
+                            runCatching { uriHandler.openUri("mailto:$AUTHOR_EMAIL") }
+                        },
+                    )
                 }
             }
         }

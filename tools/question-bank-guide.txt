@@ -1,0 +1,59 @@
+Question bank authoring guide (week extra files)
+==================================================
+
+Location: app/src/main/assets/questions/
+Each week has a main file (weekNN.json) and an extra file (weekNN_more.json) registered in manifest.json
+under "extraFiles". The app merges both. Never edit the main files; write only the extra file.
+
+File format (UTF-8, valid JSON, no comments, no trailing commas)
+------------------------------------------------------------------
+{
+  "schemaVersion": 1,
+  "week": N,
+  "module": "LangChain | LangGraph | Agent Engineering | Production",
+  "topics": [
+    {
+      "id": "<same prefix as the week's existing topic ids>_<slug>",
+      "name": "Topic title in English",
+      "description": "One-line English description.",
+      "notes": [ "## 标题", "- 要点", "```python", "code line", "```" ]
+    }
+  ],
+  "questions": [
+    {
+      "id": "<topicId>_q101",
+      "topicId": "<a new topic id from this file OR an existing topic id of the same week>",
+      "type": "SINGLE_CHOICE | MULTIPLE_CHOICE | CODE_READING | CODE_COMPLETION | DEBUGGING",
+      "difficulty": "BEGINNER | INTERMEDIATE | ADVANCED",
+      "title": "Question text in English",
+      "codeSnippet": "only for CODE_* and DEBUGGING; use \\n for newlines and escape quotes",
+      "options": [ {"id": "A", "text": "..."}, {"id": "B", "text": "..."} ],
+      "correctAnswer": ["B"],
+      "explanation": "1-3 English sentences: why the answer is right and why the tempting distractor is wrong.",
+      "tags": ["Tag"],
+      "technology": "LangChain | LangGraph | LangSmith | Production",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/... (the real page you read)"
+    }
+  ]
+}
+
+Rules
+-----
+- Ground every fact in official docs you actually fetched (start at https://docs.langchain.com/llms.txt and follow
+  the /_llms/ index links, or open known pages directly). If you cannot verify a detail, do not write it.
+- Question ids: <topicId>_q101, q102, ... (existing questions use q001-q0xx, so no collisions).
+- SINGLE_CHOICE: exactly 1 correct answer. MULTIPLE_CHOICE: 2+ correct answers out of 4-5 options.
+- CODE_READING / CODE_COMPLETION / DEBUGGING: need codeSnippet, short valid Python (max ~15 lines),
+  LangChain/LangGraph v1 style. CODE_COMPLETION marks the blank with ______.
+- Non-code types must NOT have codeSnippet.
+- 3-5 options per question, unique option ids (A, B, C, D, E) and unique option texts.
+- Exactly one defensible answer per the docs; no trick questions, no opinion questions.
+- Do not repeat concepts already covered by existing questions of that week; each new question tests a distinct point.
+- Vary the position of the correct option (the app also shuffles options at runtime).
+- Notes: 12-25 lines per new topic, Simplified Chinese with English technical terms. Syntax: "## heading",
+  "- bullet", fenced code blocks (a line ```python ... a line ```), plain paragraphs. Each array element is one line.
+
+Validate
+--------
+powershell -File tools/validate-question-bank.ps1 -Week N

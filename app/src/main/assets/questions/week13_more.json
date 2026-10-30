@@ -1,0 +1,666 @@
+{
+  "schemaVersion": 1,
+  "week": 13,
+  "module": "Production",
+  "topics": [
+    {
+      "id": "pr_w13_agent_server",
+      "name": "Agent Server Runtime and Durability",
+      "description": "Agent Server components, persistence, durability modes, background runs and streaming.",
+      "notes": [
+        "## Agent Server 运行时",
+        "- Agent Server（LangSmith Deployment）提供创建和管理 assistants、threads、runs、cron jobs 的 API，内置持久化和 task queue。",
+        "- 部署由三部分组成：一个或多个 graph、持久化数据库、task queue。",
+        "- API servers 处理请求（创建 run、读取 thread 状态、流式返回），但不执行 agent 代码。",
+        "- Queue workers 才是执行引擎：监听 task queue、运行 graph、写入 checkpoint。",
+        "- 同一个 thread 同一时间最多只有 1 个 run 在执行；每个 worker 默认并发 N_JOBS_PER_WORKER=10 个 run。",
+        "## 持久化与 durability",
+        "- 默认全部使用 PostgreSQL：assistants/threads/runs/crons、checkpoints、长期 store；Redis 只存临时数据（信号、取消、流式 pub/sub）。",
+        "- checkpoint 后端可以换成 MongoDB 或自定义实现；部署到 Agent Server 时不要在 graph 代码里自己配置 checkpointer 和 store，服务器会注入。",
+        "- durability 三种模式：exit（只在退出时保存，崩溃后无法恢复中间状态）、async（保存与下一步并行，Agent Server 默认）、sync（下一步开始前同步写入，最安全但有开销）。",
+        "- 某个 super-step 中有节点失败时，已成功节点的 pending writes 已保存，恢复时不会重新执行。",
+        "## 后台运行与流式",
+        "- client.runs.create 立即返回，run 先是 pending；用 runs.join 等待，用 runs.get 查询状态。",
+        "- client.runs.stream 流式返回；thread_id 传 None 即无状态 run，不写入 checkpointer。",
+        "- runs.join_stream 加入进行中的 run，加入之前产生的输出不会被缓冲。",
+        "- threads.join_stream 监听 thread 上所有 run，通过 Last-Event-ID（SDK 的 last_event_id）断线续传。",
+        "```python",
+        "async for chunk in client.runs.stream(",
+        "    thread_id, assistant_id, input=inputs, stream_mode=\"updates\"",
+        "):",
+        "    print(chunk.data)",
+        "```"
+      ]
+    },
+    {
+      "id": "pr_w13_multitask_cron",
+      "name": "Double Texting, Cron Jobs and Webhooks",
+      "description": "Multitask strategies, scheduled runs and completion webhooks on Agent Server.",
+      "notes": [
+        "## Double texting（multitask strategy）",
+        "- 用户在上一个 run 结束前又发了消息，称为 double texting。它是 LangSmith Deployment 的功能，开源 LangGraph 框架中没有。",
+        "- enqueue（默认）：等当前 run 完成后，按顺序执行排队的新 run。",
+        "- reject：拒绝新 run；示例中返回 409 Conflict，原 run 继续执行。",
+        "- interrupt：中止当前 run 并保留已有进度，新输入接着该状态执行；原 run 状态变为 interrupted，仍保留在数据库中。",
+        "- 使用 interrupt 时，图要处理边界情况，例如工具调用已发起但未完成，可能需要处理或移除不完整的 tool call。",
+        "- rollback：中止并回退所有进度（包括初始输入），新输入当作全新 run；原 run 被删除。",
+        "```python",
+        "run = await client.runs.create(",
+        "    thread_id, assistant_id, input=data, multitask_strategy=\"rollback\"",
+        ")",
+        "```",
+        "## Cron jobs",
+        "- 按用户定义的计划运行 assistant；所有 schedule 按 UTC 解释，例如 \"27 15 * * *\" 表示每天 15:27 UTC。",
+        "- 绑定 thread 的 cron 用 crons.create_for_thread；无状态 cron 用 crons.create，每次执行都会新建 thread。",
+        "- on_run_completed：\"delete\"（默认）执行后删除 thread；\"keep\" 保留，需自行清理（可配置 TTL）。",
+        "- 不再需要的 cron 要及时删除，否则会持续产生 LLM 费用。",
+        "## Webhooks",
+        "- 创建 run 或 cron 时传 webhook 参数，run 完成后服务器向该 URL 发 POST，载荷是 Run 格式，附带 values、webhook_sent_at、error。",
+        "- status 取值：success、error、timeout、interrupted、rollback；run 在 interrupt() 处等待人工输入时发送的也是 success。",
+        "- 安全：URL 加 token 校验、webhooks.url.allowed_domains、require_https、disable_loopback。"
+      ]
+    },
+    {
+      "id": "pr_w13_auth_access",
+      "name": "Authentication and Access Control",
+      "description": "Custom auth handlers and per-user resource access on Agent Server.",
+      "notes": [
+        "## 认证与授权",
+        "- Authentication（AuthN）验证你是谁，对每个请求作为中间件运行，由 @auth.authenticate 处理。",
+        "- Authorization（AuthZ）决定你能做什么，按资源校验，由 @auth.on 系列处理器完成。",
+        "- LangSmith 默认使用 x-api-key 头校验 LangSmith API key，可用自定义 auth 替换；自托管默认没有认证。",
+        "## @auth.authenticate",
+        "- 校验凭据；有效则返回至少包含 identity 的用户信息；无效则抛出 HTTPException（示例用 401）。",
+        "- headers 参数是 dict[bytes, bytes]，取值要用 b\"x-api-key\" 这样的 bytes 键。",
+        "- 返回的用户信息在授权处理器里通过 ctx.user 读取，在应用里通过 config[\"configuration\"][\"langgraph_auth_user\"] 读取。",
+        "## @auth.on 授权处理器",
+        "- 可以修改 value[\"metadata\"] 写入 owner，返回过滤字典限制可见资源，或抛出异常拒绝访问。",
+        "- 返回 None/True 表示放行，False 表示拒绝（403），字典表示按 metadata 过滤（支持 $eq、$contains，多个键为 AND）。",
+        "- 最具体的处理器优先：@auth.on.threads.create 优先于 @auth.on.threads，再优先于全局 @auth.on。",
+        "- run 的权限继承自所属 thread；创建 run 有专门的 create_run 处理器。",
+        "- store 的授权不同：处理器改写 value 里的 namespace 来按用户隔离数据，而不是返回 metadata 过滤。",
+        "```python",
+        "@auth.on",
+        "async def owner_only(ctx, value):",
+        "    value.setdefault(\"metadata\", {})[\"owner\"] = ctx.user.identity",
+        "    return {\"owner\": ctx.user.identity}",
+        "```"
+      ]
+    },
+    {
+      "id": "pr_w13_resilience_middleware",
+      "name": "Resilience and Cost Control Middleware",
+      "description": "Retry, fallback, call limits, summarization and human review middleware.",
+      "notes": [
+        "## 重试与降级",
+        "- ModelRetryMiddleware / ToolRetryMiddleware：指数退避重试，默认 max_retries=2（共 3 次尝试）。",
+        "- 退避参数：initial_delay=1.0、backoff_factor=2.0、max_delay=60.0、jitter=True（±25% 随机抖动）；backoff_factor=0.0 表示固定延迟。",
+        "- retry_on 可以是异常类型元组或判断函数；ToolRetryMiddleware 还可用 tools 限定作用的工具。",
+        "- on_failure：\"continue\"（默认）返回带错误信息的 AIMessage/ToolMessage，\"error\" 重新抛出异常，也可传自定义函数。",
+        "- ModelFallbackMiddleware：主模型失败后按顺序尝试备用模型。",
+        "- ToolErrorMiddleware 把工具异常转成给模型看的错误 ToolMessage；与 retry 组合时，retry 放在内层并设 on_failure=\"error\"。",
+        "## 调用次数限制",
+        "- ModelCallLimitMiddleware：thread_limit（跨 run，需要 checkpointer）、run_limit（单次调用）、exit_behavior 为 \"end\"（优雅结束）或 \"error\"（抛异常）。",
+        "- ToolCallLimitMiddleware：tool_name 省略则限制所有工具；run_limit 每条新用户消息重置；exit_behavior 默认 \"continue\"。",
+        "## 上下文管理",
+        "- SummarizationMiddleware：trigger 单个元组为单一条件，列表为 OR，字典为 AND；keep 指定保留多少上下文，默认最近 20 条消息。",
+        "- 摘要只压缩文本，不会压缩图片、音频、视频内容。",
+        "- ContextEditingMiddleware 的 ClearToolUsesEdit 清理旧的工具输出，默认保留最近 3 个。",
+        "## 生产环境中的人工审批",
+        "- HumanInTheLoopMiddleware 需要 checkpointer；生产环境用 AsyncPostgresSaver 或 MongoDBSaver，而不是 InMemorySaver。",
+        "- 决策类型：approve、edit、reject、respond；拒绝有副作用的工具要用 reject，respond 会被当作成功的工具结果。",
+        "- 恢复时用 Command(resume=...) 并传入同一个 thread_id。"
+      ]
+    }
+  ],
+  "questions": [
+    {
+      "id": "pr_w13_agent_server_q101",
+      "topicId": "pr_w13_agent_server",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "In an Agent Server deployment, which component actually executes your graph code?",
+      "options": [
+        {"id": "A", "text": "API servers"},
+        {"id": "B", "text": "Queue workers"},
+        {"id": "C", "text": "Redis"},
+        {"id": "D", "text": "The client SDK"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "API servers handle client requests but do not execute agent code; queue workers pick up runs from the task queue, run the graph and write checkpoints. Redis only carries ephemeral signaling and streaming data.",
+      "tags": ["Agent Server", "Architecture"],
+      "technology": "LangSmith",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/agent-server"
+    },
+    {
+      "id": "pr_w13_agent_server_q102",
+      "topicId": "pr_w13_agent_server",
+      "type": "CODE_READING",
+      "difficulty": "BEGINNER",
+      "title": "Right after runs.create returns for a background run, what status does the first poll show?",
+      "codeSnippet": "run = await client.runs.create(\n    thread[\"thread_id\"], assistant_id, input=input\n)\ninfo = await client.runs.get(\n    thread[\"thread_id\"], run[\"run_id\"]\n)\nprint(info[\"status\"])",
+      "options": [
+        {"id": "A", "text": "success"},
+        {"id": "B", "text": "idle"},
+        {"id": "C", "text": "pending"},
+        {"id": "D", "text": "error"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "runs.create kicks off a background run and returns immediately, so the first poll shows pending. Call runs.join to wait; only then does the status become success.",
+      "tags": ["Background runs", "Agent Server"],
+      "technology": "LangSmith",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/background-run"
+    },
+    {
+      "id": "pr_w13_agent_server_q103",
+      "topicId": "pr_w13_agent_server",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "Which statements about Agent Server persistence are correct?",
+      "options": [
+        {"id": "A", "text": "Assistants, threads, runs and cron jobs are always stored in PostgreSQL"},
+        {"id": "B", "text": "Checkpoints default to PostgreSQL but can be switched to MongoDB or a custom implementation"},
+        {"id": "C", "text": "Redis keeps the permanent copy of all run data"},
+        {"id": "D", "text": "The long-term store defaults to PostgreSQL and can be replaced with a custom implementation"},
+        {"id": "E", "text": "Checkpoints live only in worker memory"}
+      ],
+      "correctAnswer": ["A", "B", "D"],
+      "explanation": "Core resource data, checkpoints and the store are PostgreSQL-backed by default. Redis stores only ephemeral data such as signaling and streaming pub/sub, and checkpoints are persisted rather than kept in worker memory.",
+      "tags": ["Persistence", "Postgres"],
+      "technology": "LangSmith",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/agent-server"
+    },
+    {
+      "id": "pr_w13_agent_server_q104",
+      "topicId": "pr_w13_agent_server",
+      "type": "CODE_COMPLETION",
+      "difficulty": "INTERMEDIATE",
+      "title": "Fill in the blank so LangGraph writes every checkpoint synchronously before the next step starts.",
+      "codeSnippet": "graph.stream(\n    {\"input\": \"test\"},\n    durability=\"______\"\n)",
+      "options": [
+        {"id": "A", "text": "async"},
+        {"id": "B", "text": "exit"},
+        {"id": "C", "text": "strict"},
+        {"id": "D", "text": "sync"}
+      ],
+      "correctAnswer": ["D"],
+      "explanation": "sync persists changes before the next step starts, giving the highest durability at some performance cost. async writes while the next step runs, and exit saves only when execution exits.",
+      "tags": ["Durability", "Checkpointer"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/checkpointers"
+    },
+    {
+      "id": "pr_w13_agent_server_q105",
+      "topicId": "pr_w13_agent_server",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "ADVANCED",
+      "title": "A long-running graph runs with durability=\"exit\" and the process crashes midway. What can you expect?",
+      "options": [
+        {"id": "A", "text": "The run resumes from the last completed super-step"},
+        {"id": "B", "text": "Intermediate state was not saved, so you cannot recover mid-execution progress from the crash"},
+        {"id": "C", "text": "LangGraph automatically retries the failed super-step on another process"},
+        {"id": "D", "text": "Every checkpoint was already written synchronously, so nothing is lost"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "In exit mode LangGraph persists only when execution exits (success, error or interrupt), which is fastest but gives no recovery from process crashes. Resuming from the last step needs async or sync durability.",
+      "tags": ["Durability", "Fault tolerance"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/checkpointers"
+    },
+    {
+      "id": "pr_w13_agent_server_q106",
+      "topicId": "pr_w13_agent_server",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "A client calls runs.join_stream on a background run that has already produced some output. What does it receive?",
+      "options": [
+        {"id": "A", "text": "The full output from the beginning of the run"},
+        {"id": "B", "text": "Only the final state"},
+        {"id": "C", "text": "Only output produced after it joined, because output is not buffered"},
+        {"id": "D", "text": "Nothing, because join_stream only works on completed runs"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "join_stream attaches to an active background run, and output is not buffered, so anything produced before joining is missed. For resumable streaming, thread streaming supports Last-Event-ID.",
+      "tags": ["Streaming", "Background runs"],
+      "technology": "LangSmith",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/streaming"
+    },
+    {
+      "id": "pr_w13_agent_server_q107",
+      "topicId": "pr_w13_agent_server",
+      "type": "CODE_COMPLETION",
+      "difficulty": "ADVANCED",
+      "title": "Complete the call so a dropped thread stream resumes without missing events.",
+      "codeSnippet": "async for chunk in client.threads.join_stream(\n    thread_id,\n    ______=\"<LAST_EVENT_ID>\",\n):\n    print(chunk)",
+      "options": [
+        {"id": "A", "text": "event_id"},
+        {"id": "B", "text": "last_event_id"},
+        {"id": "C", "text": "resume_from"},
+        {"id": "D", "text": "checkpoint_id"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "Thread streams are resumable through the Last-Event-ID header, which the SDK exposes as last_event_id. Passing \"-\" replays from the beginning; checkpoint_id belongs to graph state, not to the event stream.",
+      "tags": ["Streaming", "SSE", "Resumability"],
+      "technology": "LangSmith",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/streaming"
+    },
+    {
+      "id": "pr_w13_agent_server_q109",
+      "topicId": "pr_w13_agent_server",
+      "type": "DEBUGGING",
+      "difficulty": "INTERMEDIATE",
+      "title": "This graph module is exported in langgraph.json and deployed to Agent Server. What is the problem?",
+      "codeSnippet": "from langgraph.checkpoint.memory import InMemorySaver\n\ngraph = builder.compile(checkpointer=InMemorySaver())",
+      "options": [
+        {"id": "A", "text": "Compiled graphs cannot be exported for deployment"},
+        {"id": "B", "text": "InMemorySaver requires a store to be passed as well"},
+        {"id": "C", "text": "The server injects the checkpointer and store itself, so they should not be configured in graph code (and InMemorySaver loses state on restart)"},
+        {"id": "D", "text": "The graph must be a factory function to use a checkpointer"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "Agent Server injects the deployment's checkpointer and store at runtime and needs to manage them for other operations, so graph code should not configure them. InMemorySaver also keeps checkpoints only in RAM.",
+      "tags": ["Checkpointer", "Deployment"],
+      "technology": "LangSmith",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/agent-server"
+    },
+    {
+      "id": "pr_w13_multitask_cron_q101",
+      "topicId": "pr_w13_multitask_cron",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "Which double texting (multitask) strategy is the default when creating runs on Agent Server?",
+      "options": [
+        {"id": "A", "text": "reject"},
+        {"id": "B", "text": "interrupt"},
+        {"id": "C", "text": "rollback"},
+        {"id": "D", "text": "enqueue"}
+      ],
+      "correctAnswer": ["D"],
+      "explanation": "Enqueue lets the current run finish and runs queued requests sequentially afterwards. Reject, interrupt and rollback must be requested explicitly through multitask_strategy.",
+      "tags": ["Double texting", "Concurrency"],
+      "technology": "LangSmith",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/double-texting"
+    },
+    {
+      "id": "pr_w13_multitask_cron_q102",
+      "topicId": "pr_w13_multitask_cron",
+      "type": "CODE_READING",
+      "difficulty": "INTERMEDIATE",
+      "title": "The first run is still in progress when this second request is sent. What happens?",
+      "codeSnippet": "run = await client.runs.create(\n    thread[\"thread_id\"], assistant_id, input=first_input\n)\ntry:\n    await client.runs.create(\n        thread[\"thread_id\"], assistant_id, input=second_input,\n        multitask_strategy=\"reject\",\n    )\nexcept httpx.HTTPStatusError as e:\n    print(\"Failed to start concurrent run\", e)",
+      "options": [
+        {"id": "A", "text": "The second request fails with an HTTP error (409 Conflict) and the first run continues to completion"},
+        {"id": "B", "text": "The second request is queued and runs after the first finishes"},
+        {"id": "C", "text": "The first run is stopped and the second one starts"},
+        {"id": "D", "text": "Both runs execute in parallel on the same thread"}
+      ],
+      "correctAnswer": ["A"],
+      "explanation": "reject throws an error for the new run and lets the original run finish; the docs example shows a 409 Conflict. Queuing is the enqueue strategy and stopping the first run is interrupt or rollback.",
+      "tags": ["Double texting", "Reject"],
+      "technology": "LangSmith",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/reject-concurrent"
+    },
+    {
+      "id": "pr_w13_multitask_cron_q103",
+      "topicId": "pr_w13_multitask_cron",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "How does the rollback multitask strategy differ from interrupt?",
+      "options": [
+        {"id": "A", "text": "Rollback queues the new run, while interrupt rejects it"},
+        {"id": "B", "text": "Rollback keeps the first run with status rolled_back, while interrupt deletes it"},
+        {"id": "C", "text": "Rollback deletes the first run and its progress, while interrupt keeps it with status interrupted"},
+        {"id": "D", "text": "There is no difference; both delete the first run"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "Rollback reverts all progress including the first run's input and deletes the run, so the thread contains only the second run's data. Interrupt keeps the first run in the database with status interrupted and preserves its partial progress.",
+      "tags": ["Double texting", "Rollback"],
+      "technology": "LangSmith",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/rollback-concurrent"
+    },
+    {
+      "id": "pr_w13_multitask_cron_q104",
+      "topicId": "pr_w13_multitask_cron",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "ADVANCED",
+      "title": "When using the interrupt multitask strategy, what edge case must your graph account for?",
+      "options": [
+        {"id": "A", "text": "A tool call may have been initiated but not completed at the interruption point, so partial tool calls may need handling or removal"},
+        {"id": "B", "text": "The new input is always appended before the interrupted run's checkpoints"},
+        {"id": "C", "text": "The interrupted run is deleted, so its messages must be re-sent"},
+        {"id": "D", "text": "The thread is locked until a human resumes it"}
+      ],
+      "correctAnswer": ["A"],
+      "explanation": "Interrupt halts the current run and continues from the preserved state with the new input, so an unfinished tool call can leave unresolved operations in state. Deleting the first run describes rollback, not interrupt.",
+      "tags": ["Double texting", "Interrupt"],
+      "technology": "LangSmith",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/double-texting"
+    },
+    {
+      "id": "pr_w13_multitask_cron_q106",
+      "topicId": "pr_w13_multitask_cron",
+      "type": "CODE_COMPLETION",
+      "difficulty": "INTERMEDIATE",
+      "title": "Complete the stateless cron job so each run's thread is preserved for later retrieval.",
+      "codeSnippet": "cron_job = await client.crons.create(\n    assistant_id,\n    schedule=\"27 15 * * *\",\n    input={\"messages\": [{\"role\": \"user\", \"content\": \"Daily report\"}]},\n    on_run_completed=\"______\",\n)",
+      "options": [
+        {"id": "A", "text": "delete"},
+        {"id": "B", "text": "archive"},
+        {"id": "C", "text": "retain"},
+        {"id": "D", "text": "keep"}
+      ],
+      "correctAnswer": ["D"],
+      "explanation": "on_run_completed=\"keep\" preserves the thread; the default \"delete\" removes it after the run. With keep you are responsible for cleanup, for example with checkpointer TTL settings.",
+      "tags": ["Cron jobs", "Thread cleanup"],
+      "technology": "LangSmith",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/cron-jobs"
+    },
+    {
+      "id": "pr_w13_multitask_cron_q107",
+      "topicId": "pr_w13_multitask_cron",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "Which of these are values of the status field in an Agent Server webhook payload?",
+      "options": [
+        {"id": "A", "text": "success"},
+        {"id": "B", "text": "error"},
+        {"id": "C", "text": "pending"},
+        {"id": "D", "text": "rollback"},
+        {"id": "E", "text": "queued"}
+      ],
+      "correctAnswer": ["A", "B", "D"],
+      "explanation": "The documented statuses are success, error, timeout, interrupted and rollback. A run still pending never started, so no webhook is sent for it.",
+      "tags": ["Webhooks", "Run status"],
+      "technology": "LangSmith",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/use-webhooks"
+    },
+    {
+      "id": "pr_w13_multitask_cron_q108",
+      "topicId": "pr_w13_multitask_cron",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "ADVANCED",
+      "title": "A run pauses at an interrupt() call waiting for human input. What does its completion webhook report, and how can you detect the pause?",
+      "options": [
+        {"id": "A", "text": "status \"interrupted\"; the payload lists the pending interrupt"},
+        {"id": "B", "text": "status \"success\"; the pending interrupt is not in the payload, so read the thread state"},
+        {"id": "C", "text": "No webhook is sent until the human resumes the run"},
+        {"id": "D", "text": "status \"timeout\" after BG_JOB_TIMEOUT_SECS"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "A run waiting at interrupt() is reported as success, and the pending interrupt is not visible in the payload. The \"interrupted\" status is for runs cancelled while executing, for example by a multitask interrupt strategy.",
+      "tags": ["Webhooks", "Human-in-the-loop"],
+      "technology": "LangSmith",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/use-webhooks"
+    },
+    {
+      "id": "pr_w13_auth_access_q101",
+      "topicId": "pr_w13_auth_access",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "In Agent Server custom auth, which handler validates the credentials on every request?",
+      "options": [
+        {"id": "A", "text": "@auth.on.threads.read"},
+        {"id": "B", "text": "@auth.on"},
+        {"id": "C", "text": "@auth.authenticate"},
+        {"id": "D", "text": "@auth.on.store"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "Authentication (who you are) runs as middleware through @auth.authenticate. The @auth.on handlers perform authorization, deciding what the authenticated user can do with each resource.",
+      "tags": ["Authentication", "Custom auth"],
+      "technology": "LangSmith",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/auth"
+    },
+    {
+      "id": "pr_w13_auth_access_q102",
+      "topicId": "pr_w13_auth_access",
+      "type": "CODE_COMPLETION",
+      "difficulty": "BEGINNER",
+      "title": "Which status code should the authenticate handler use when the API key is invalid?",
+      "codeSnippet": "@auth.authenticate\nasync def authenticate(headers: dict) -> Auth.types.MinimalUserDict:\n    api_key = headers.get(b\"x-api-key\")\n    if not api_key or not is_valid_key(api_key):\n        raise Auth.exceptions.HTTPException(\n            status_code=______, detail=\"Invalid API key\"\n        )\n    return {\"identity\": \"user-123\"}",
+      "options": [
+        {"id": "A", "text": "200"},
+        {"id": "B", "text": "403"},
+        {"id": "C", "text": "401"},
+        {"id": "D", "text": "404"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "The docs example rejects invalid credentials with 401. The 403 code is used in authorization handlers when a valid user lacks permission.",
+      "tags": ["Authentication", "HTTP status"],
+      "technology": "LangSmith",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/auth"
+    },
+    {
+      "id": "pr_w13_auth_access_q103",
+      "topicId": "pr_w13_auth_access",
+      "type": "CODE_READING",
+      "difficulty": "INTERMEDIATE",
+      "title": "What does this global handler achieve?",
+      "codeSnippet": "@auth.on\nasync def add_owner(ctx: Auth.types.AuthContext, value: dict):\n    filters = {\"owner\": ctx.user.identity}\n    metadata = value.setdefault(\"metadata\", {})\n    metadata.update(filters)\n    return filters",
+      "options": [
+        {"id": "A", "text": "It denies every request with a 403"},
+        {"id": "B", "text": "It stamps new resources with the owner and restricts every operation to resources owned by the current user"},
+        {"id": "C", "text": "It only checks the user's permissions list"},
+        {"id": "D", "text": "It lets every authenticated user see all resources"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "Writing owner into metadata persists it with created resources, and the returned filter is applied to all operations so users only access their own threads, runs, crons and assistants. Returning None or True would allow access to everything.",
+      "tags": ["Authorization", "Per-user access"],
+      "technology": "LangSmith",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/auth"
+    },
+    {
+      "id": "pr_w13_auth_access_q104",
+      "topicId": "pr_w13_auth_access",
+      "type": "DEBUGGING",
+      "difficulty": "ADVANCED",
+      "title": "Valid clients send an x-api-key header but every request gets 401. What is the bug?",
+      "codeSnippet": "@auth.authenticate\nasync def authenticate(headers: dict):\n    api_key = headers.get(\"x-api-key\")\n    if not api_key or not is_valid_key(api_key):\n        raise Auth.exceptions.HTTPException(\n            status_code=401, detail=\"Invalid API key\"\n        )\n    return {\"identity\": \"user-123\"}",
+      "options": [
+        {"id": "A", "text": "The handler must be synchronous"},
+        {"id": "B", "text": "The handler must return is_authenticated=False"},
+        {"id": "C", "text": "HTTPException cannot be raised in an authenticate handler"},
+        {"id": "D", "text": "headers is a dict[bytes, bytes], so the lookup must use b\"x-api-key\" instead of a str key"}
+      ],
+      "correctAnswer": ["D"],
+      "explanation": "The headers parameter is a dict[bytes, bytes], so a str key never matches and api_key is always None. Raising HTTPException is the documented way to reject a request.",
+      "tags": ["Authentication", "Debugging"],
+      "technology": "LangSmith",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/auth"
+    },
+    {
+      "id": "pr_w13_auth_access_q105",
+      "topicId": "pr_w13_auth_access",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "ADVANCED",
+      "title": "How do authorization handlers isolate Agent Server store data per user?",
+      "options": [
+        {"id": "A", "text": "By returning a metadata filter such as {\"owner\": user_id}, as for threads"},
+        {"id": "B", "text": "By rewriting the mutable namespace field in value to scope data to the user"},
+        {"id": "C", "text": "By storing each user's data in a separate PostgreSQL database"},
+        {"id": "D", "text": "Store access cannot be restricted per user"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "Store authorization differs from threads and assistants: handlers rewrite the namespace in value to scope data per user rather than returning metadata filters.",
+      "tags": ["Authorization", "Store"],
+      "technology": "LangSmith",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/auth"
+    },
+    {
+      "id": "pr_w13_auth_access_q106",
+      "topicId": "pr_w13_auth_access",
+      "type": "CODE_READING",
+      "difficulty": "INTERMEDIATE",
+      "title": "An authenticated user tries to update (not create) a thread. What happens?",
+      "codeSnippet": "@auth.on\nasync def reject_unhandled(ctx, value):\n    raise Auth.exceptions.HTTPException(\n        status_code=403, detail=\"Forbidden\"\n    )\n\n@auth.on.threads.create\nasync def on_thread_create(ctx, value):\n    value.setdefault(\"metadata\", {})[\"owner\"] = ctx.user.identity\n    return {\"owner\": ctx.user.identity}",
+      "options": [
+        {"id": "A", "text": "The update succeeds because the user is authenticated"},
+        {"id": "B", "text": "on_thread_create runs because it is about threads"},
+        {"id": "C", "text": "The request fails with 403 from the global handler, since no more specific handler matches thread updates"},
+        {"id": "D", "text": "Both handlers run in order and the first one wins"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "The most specific matching handler is used, and on_thread_create matches only thread creation. Thread updates fall through to the global @auth.on handler, which raises 403.",
+      "tags": ["Authorization", "Handler precedence"],
+      "technology": "LangSmith",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/auth"
+    },
+    {
+      "id": "pr_w13_resilience_middleware_q101",
+      "topicId": "pr_w13_resilience_middleware",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "With default settings, how many total model call attempts does ModelRetryMiddleware make before giving up?",
+      "options": [
+        {"id": "A", "text": "1"},
+        {"id": "B", "text": "2"},
+        {"id": "C", "text": "3"},
+        {"id": "D", "text": "5"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "max_retries defaults to 2 and counts retries after the initial call, so there are 3 total attempts.",
+      "tags": ["Retries", "Middleware"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/middleware/built-in"
+    },
+    {
+      "id": "pr_w13_resilience_middleware_q102",
+      "topicId": "pr_w13_resilience_middleware",
+      "type": "CODE_READING",
+      "difficulty": "BEGINNER",
+      "title": "The call to gpt-5.5 fails. What does this agent do?",
+      "codeSnippet": "agent = create_agent(\n    model=\"gpt-5.5\",\n    tools=[],\n    middleware=[\n        ModelFallbackMiddleware(\n            \"gpt-5.4-mini\",\n            \"claude-sonnet-4-6\",\n        ),\n    ],\n)",
+      "options": [
+        {"id": "A", "text": "It tries gpt-5.4-mini first, then claude-sonnet-4-6 if that also fails"},
+        {"id": "B", "text": "It calls both fallback models in parallel and takes the first answer"},
+        {"id": "C", "text": "It retries gpt-5.5 with exponential backoff"},
+        {"id": "D", "text": "It tries claude-sonnet-4-6 first because it is the last listed"}
+      ],
+      "correctAnswer": ["A"],
+      "explanation": "Fallback models are tried in order after the primary model fails. Retrying the same model with backoff is the job of ModelRetryMiddleware.",
+      "tags": ["Fallback", "Middleware"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/middleware/built-in"
+    },
+    {
+      "id": "pr_w13_resilience_middleware_q103",
+      "topicId": "pr_w13_resilience_middleware",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "Which middleware classes retry failed calls with exponential backoff?",
+      "options": [
+        {"id": "A", "text": "ModelRetryMiddleware"},
+        {"id": "B", "text": "ModelFallbackMiddleware"},
+        {"id": "C", "text": "ToolRetryMiddleware"},
+        {"id": "D", "text": "SummarizationMiddleware"}
+      ],
+      "correctAnswer": ["A", "C"],
+      "explanation": "ModelRetryMiddleware and ToolRetryMiddleware retry failed model and tool calls with configurable exponential backoff. ModelFallbackMiddleware switches to other models instead of retrying, and SummarizationMiddleware compresses context.",
+      "tags": ["Retries", "Middleware"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/middleware/built-in"
+    },
+    {
+      "id": "pr_w13_resilience_middleware_q104",
+      "topicId": "pr_w13_resilience_middleware",
+      "type": "CODE_COMPLETION",
+      "difficulty": "INTERMEDIATE",
+      "title": "Fill in the blank so reaching a limit raises an exception instead of ending gracefully.",
+      "codeSnippet": "agent = create_agent(\n    model=\"gpt-5.5\",\n    checkpointer=InMemorySaver(),\n    tools=[],\n    middleware=[\n        ModelCallLimitMiddleware(\n            thread_limit=10,\n            run_limit=5,\n            exit_behavior=\"______\",\n        ),\n    ],\n)",
+      "options": [
+        {"id": "A", "text": "end"},
+        {"id": "B", "text": "raise"},
+        {"id": "C", "text": "stop"},
+        {"id": "D", "text": "error"}
+      ],
+      "correctAnswer": ["D"],
+      "explanation": "exit_behavior accepts \"end\" for graceful termination (the default) or \"error\" to raise an exception. Using thread_limit requires a checkpointer, which is why one is configured here.",
+      "tags": ["Call limits", "Cost control"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/middleware/built-in"
+    },
+    {
+      "id": "pr_w13_resilience_middleware_q105",
+      "topicId": "pr_w13_resilience_middleware",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "Which statements about ToolCallLimitMiddleware are correct?",
+      "options": [
+        {"id": "A", "text": "Omitting tool_name applies the limit to all tools globally"},
+        {"id": "B", "text": "thread_limit persists across invocations with the same thread ID and needs a checkpointer"},
+        {"id": "C", "text": "run_limit resets with each new user message"},
+        {"id": "D", "text": "The default exit_behavior is \"error\""}
+      ],
+      "correctAnswer": ["A", "B", "C"],
+      "explanation": "These three behaviors are documented. The default exit_behavior is \"continue\", which blocks the exceeded calls with error messages and lets the model decide when to end.",
+      "tags": ["Call limits", "Cost control"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/middleware/built-in"
+    },
+    {
+      "id": "pr_w13_resilience_middleware_q106",
+      "topicId": "pr_w13_resilience_middleware",
+      "type": "CODE_READING",
+      "difficulty": "ADVANCED",
+      "title": "When does this middleware summarize the conversation?",
+      "codeSnippet": "SummarizationMiddleware(\n    model=\"gpt-5.4-mini\",\n    trigger={\"tokens\": 4000, \"messages\": 10},\n    keep=(\"messages\", 20),\n)",
+      "options": [
+        {"id": "A", "text": "Whenever either 4000 tokens or 10 messages is reached"},
+        {"id": "B", "text": "Only when both the token threshold and the message threshold are met"},
+        {"id": "C", "text": "Never, because trigger must be a tuple"},
+        {"id": "D", "text": "Only when the message count reaches 20"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "A trigger dict with several thresholds uses AND logic, while a list of conditions uses OR logic. The keep value controls how many recent messages are preserved, not when summarization starts.",
+      "tags": ["Summarization", "Context management"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/middleware/built-in"
+    },
+    {
+      "id": "pr_w13_resilience_middleware_q107",
+      "topicId": "pr_w13_resilience_middleware",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "ADVANCED",
+      "title": "Which statements about running HumanInTheLoopMiddleware in production are correct?",
+      "options": [
+        {"id": "A", "text": "It requires a checkpointer to persist state across interruptions"},
+        {"id": "B", "text": "A persistent checkpointer such as AsyncPostgresSaver or MongoDBSaver should be used in production"},
+        {"id": "C", "text": "Resuming uses Command(resume=...) with the same thread ID in the config"},
+        {"id": "D", "text": "InMemorySaver is the recommended checkpointer for production"},
+        {"id": "E", "text": "A respond decision is the right way to deny a side-effecting tool call"}
+      ],
+      "correctAnswer": ["A", "B", "C"],
+      "explanation": "The interrupt state must survive pauses, so a persistent checkpointer and a stable thread ID are required. InMemorySaver is for testing, and respond returns a successful tool result, so reject is the decision for denying a call.",
+      "tags": ["Human-in-the-loop", "Checkpointer"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/human-in-the-loop"
+    }
+  ]
+}

@@ -1,0 +1,662 @@
+{
+  "schemaVersion": 1,
+  "week": 7,
+  "module": "LangGraph",
+  "topics": [
+    {
+      "id": "lg_w07_state_history",
+      "name": "State Snapshots, History & Time Travel",
+      "description": "Inspecting checkpoints with get_state/get_state_history and using update_state to replay or fork.",
+      "notes": [
+        "## StateSnapshot 与历史",
+        "- 每个 super-step 结束后 checkpointer 保存一个 checkpoint，用 StateSnapshot 表示。",
+        "- StateSnapshot 字段：values、next、config、metadata、created_at、parent_config、tasks。",
+        "- next 为空元组 () 表示图已经执行完毕。",
+        "```python",
+        "config = {\"configurable\": {\"thread_id\": \"1\"}}",
+        "graph.get_state(config)  # 最新的 checkpoint",
+        "history = list(graph.get_state_history(config))  # 最新的在最前",
+        "```",
+        "- START -> A -> B -> END 的图运行一次共产生 4 个 checkpoint（包含最初的空 checkpoint）。",
+        "## update_state、Replay 与 Fork",
+        "- update_state 会创建新的 checkpoint，不会修改原 checkpoint，也不会回滚 thread。",
+        "- 更新值会经过 reducer，所以带 reducer 的 channel 是累加而不是覆盖。",
+        "- as_node 指定这次更新被视为哪个节点产生，从而决定接下来执行哪个节点。",
+        "- Replay：用历史 checkpoint 的 config 调用 invoke(None, config)；该 checkpoint 之前的节点不重跑，之后的节点会重新执行（包括 LLM 调用和 interrupt）。",
+        "- 从最终 checkpoint（没有 next 节点）replay 不会做任何事。",
+        "- Fork：先对历史 checkpoint 调用 update_state 得到新 config，再 invoke(None, fork_config)。",
+        "```python",
+        "before_joke = next(s for s in history if s.next == (\"write_joke\",))",
+        "fork_config = graph.update_state(before_joke.config, {\"topic\": \"chickens\"})",
+        "graph.invoke(None, fork_config)",
+        "```"
+      ]
+    },
+    {
+      "id": "lg_w07_durability",
+      "name": "Durability, Fault Tolerance & Checkpointer Libraries",
+      "description": "Durability modes, pending writes, production checkpointers and encrypted serialization.",
+      "notes": [
+        "## Durability 模式",
+        "- 调用图时可以传 durability 参数，取值 exit / async / sync（持久性由低到高）。",
+        "```python",
+        "graph.stream({\"input\": \"test\"}, durability=\"sync\")",
+        "```",
+        "- exit：只在执行退出（成功、报错或 interrupt）时保存；性能最好，但进程崩溃时无法从中途恢复。",
+        "- async：下一步执行的同时异步保存；性能和持久性都不错，但进程崩溃时有小概率丢失 checkpoint。",
+        "- sync：下一步开始前同步保存；持久性最高，有一定性能开销。",
+        "## 容错与 Pending writes",
+        "- 同一 super-step 里某个节点失败时，其他成功节点的 writes 作为 pending writes 保存，恢复时不会重跑这些节点。",
+        "## Checkpointer 实现",
+        "- InMemorySaver 随 langgraph-checkpoint 提供，用于实验；SqliteSaver 适合实验和本地流程。",
+        "- PostgresSaver、MongoDBSaver 适合生产环境；数据库实现首次使用要调用 setup()。",
+        "- 删除某个 thread 的全部 checkpoint：checkpointer.delete_thread(thread_id)。",
+        "## 加密",
+        "- 给 serde 参数传入 EncryptedSerializer 即可加密所有持久化状态。",
+        "- from_pycryptodome_aes() 默认从环境变量 LANGGRAPH_AES_KEY 读取 AES 密钥。",
+        "```python",
+        "serde = EncryptedSerializer.from_pycryptodome_aes()",
+        "checkpointer = SqliteSaver(sqlite3.connect(\"checkpoint.db\"), serde=serde)",
+        "```"
+      ]
+    },
+    {
+      "id": "lg_w07_store",
+      "name": "Long-term Memory with Store",
+      "description": "Namespaces, put/search, semantic search, Runtime access and memory types.",
+      "notes": [
+        "## Store 与 namespace",
+        "- Store 保存跨 thread 的长期记忆，按 namespace（字符串元组）加 key 组织，value 是字典。",
+        "```python",
+        "store = InMemoryStore()",
+        "ns = (user_id, \"memories\")",
+        "store.put(ns, str(uuid7()), {\"food_preference\": \"I like pizza\"})",
+        "items = store.search(ns, limit=3)",
+        "```",
+        "- search 的 namespace_prefix 按前缀匹配；limit 默认 10，超出部分被静默截断，可用 offset 分页。",
+        "- InMemoryStore 适合开发和测试，生产环境使用 PostgresStore 等持久化实现。",
+        "## 语义搜索",
+        "- 创建 store 时配置 index（embed、dims、fields），search 时传 query 即可按语义检索。",
+        "- put(..., index=[\"field\"]) 只嵌入指定字段；index=False 则不嵌入，仍可读取但不能被语义搜索命中。",
+        "## 在节点中使用",
+        "- compile(store=store) 后，节点通过 Runtime 参数访问 runtime.store 和 runtime.context。",
+        "## 记忆类型与写入时机",
+        "- Semantic（事实）、Episodic（经历）、Procedural（指令）。",
+        "- hot path 写入：新记忆立即可用，但会增加延迟；后台写入：不影响主流程延迟，但要决定触发频率。"
+      ]
+    },
+    {
+      "id": "lg_w07_msg_mgmt",
+      "name": "Managing Short-term Message History",
+      "description": "Trimming, deleting and summarizing messages in graph state.",
+      "notes": [
+        "## 管理短期记忆",
+        "- checkpointer 只负责持久化 state；调用模型的节点决定把 state 里的哪些数据放进模型输入。",
+        "- 常见做法：trim、delete、summarize，或自定义过滤策略。",
+        "## Trim",
+        "- trim_messages 在调用模型前裁剪消息列表，不会把消息从 state 中删除。",
+        "```python",
+        "messages = trim_messages(state[\"messages\"], strategy=\"last\",",
+        "    token_counter=count_tokens_approximately, max_tokens=128,",
+        "    start_on=\"human\", end_on=(\"human\", \"tool\"))",
+        "```",
+        "## Delete",
+        "- 用 RemoveMessage(id=...) 从 state 中永久删除消息；该 state key 必须使用 add_messages reducer（例如 MessagesState）。",
+        "- 删除全部消息：RemoveMessage(id=REMOVE_ALL_MESSAGES)。",
+        "- 删除后要保证历史仍然合法：有的模型要求以 user 消息开头；带 tool call 的 assistant 消息后必须跟对应的 tool 结果。",
+        "## Summarize",
+        "- trim 和 delete 会丢失信息；可以用模型对旧消息做摘要，把 summary 存进 state，再删除旧消息。"
+      ]
+    }
+  ],
+  "questions": [
+    {
+      "id": "lg_w07_state_history_q101",
+      "topicId": "lg_w07_state_history",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "What does graph.get_state(config) return when config only contains a thread_id?",
+      "options": [
+        {"id": "A", "text": "The full list of every checkpoint of the thread"},
+        {"id": "B", "text": "Only the list of messages of the thread"},
+        {"id": "C", "text": "A StateSnapshot for the latest checkpoint of the thread"},
+        {"id": "D", "text": "The checkpointer object used by the graph"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "get_state returns a StateSnapshot for the latest checkpoint of the thread, or for a specific checkpoint when a checkpoint_id is also given. The list of all checkpoints comes from get_state_history.",
+      "tags": ["StateSnapshot", "get_state"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/checkpointers"
+    },
+    {
+      "id": "lg_w07_state_history_q102",
+      "topicId": "lg_w07_state_history",
+      "type": "CODE_READING",
+      "difficulty": "INTERMEDIATE",
+      "title": "The graph run below finished successfully. What does the last line print?",
+      "codeSnippet": "config = {\"configurable\": {\"thread_id\": \"1\"}}\ngraph.invoke({\"foo\": \"\"}, config)\n\nhistory = list(graph.get_state_history(config))\nprint(history[0].next)",
+      "options": [
+        {"id": "A", "text": "() because the newest snapshot is first and the graph is complete"},
+        {"id": "B", "text": "('__start__',) because the oldest snapshot is first"},
+        {"id": "C", "text": "None because next is only set for interrupted runs"},
+        {"id": "D", "text": "The name of the first node of the graph"}
+      ],
+      "correctAnswer": ["A"],
+      "explanation": "get_state_history returns snapshots in reverse chronological order, so index 0 is the latest one, and an empty next tuple means the graph is complete. The ('__start__',) snapshot is the last element of the list.",
+      "tags": ["get_state_history", "StateSnapshot"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/checkpointers"
+    },
+    {
+      "id": "lg_w07_state_history_q103",
+      "topicId": "lg_w07_state_history",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "A graph START -> node_a -> node_b -> END is compiled with InMemorySaver and invoked once. How many checkpoints are saved for the thread?",
+      "options": [
+        {"id": "A", "text": "2"},
+        {"id": "B", "text": "3"},
+        {"id": "C", "text": "5"},
+        {"id": "D", "text": "4"}
+      ],
+      "correctAnswer": ["D"],
+      "explanation": "One checkpoint is written per super-step boundary: the empty one with START next, the one with the input, the one after node_a, and the one after node_b. Only counting node outputs would miss the first two.",
+      "tags": ["Checkpoints", "Super-step"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/checkpointers"
+    },
+    {
+      "id": "lg_w07_state_history_q104",
+      "topicId": "lg_w07_state_history",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "Which of the following are fields of a StateSnapshot?",
+      "options": [
+        {"id": "A", "text": "values"},
+        {"id": "B", "text": "next"},
+        {"id": "C", "text": "tasks"},
+        {"id": "D", "text": "api_key"},
+        {"id": "E", "text": "token_usage"}
+      ],
+      "correctAnswer": ["A", "B", "C"],
+      "explanation": "A StateSnapshot has values, next, config, metadata, created_at, parent_config and tasks. API keys and token usage are not stored in it.",
+      "tags": ["StateSnapshot"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/checkpointers"
+    },
+    {
+      "id": "lg_w07_state_history_q105",
+      "topicId": "lg_w07_state_history",
+      "type": "CODE_COMPLETION",
+      "difficulty": "INTERMEDIATE",
+      "title": "Complete the call that replays the graph from the checkpoint before write_joke.",
+      "codeSnippet": "history = list(graph.get_state_history(config))\nbefore_joke = next(s for s in history if s.next == (\"write_joke\",))\n\nreplay_result = graph.invoke(______, before_joke.config)",
+      "options": [
+        {"id": "A", "text": "{}"},
+        {"id": "B", "text": "None"},
+        {"id": "C", "text": "before_joke.values"},
+        {"id": "D", "text": "history"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "Replay and resuming a fork use invoke(None, checkpoint_config) so execution continues from that checkpoint. Passing a new input dict would not replay the saved step.",
+      "tags": ["Replay", "Time Travel"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/use-time-travel"
+    },
+    {
+      "id": "lg_w07_state_history_q106",
+      "topicId": "lg_w07_state_history",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "ADVANCED",
+      "title": "You replay from the checkpoint just before write_joke, a node that calls an LLM. What happens?",
+      "options": [
+        {"id": "A", "text": "The earlier node is skipped and write_joke runs again, including its LLM call, so the result may differ"},
+        {"id": "B", "text": "The cached LLM response from the first run is returned without calling the model"},
+        {"id": "C", "text": "Every node of the graph re-executes from START"},
+        {"id": "D", "text": "Nothing runs because replay only reads stored state"}
+      ],
+      "correctAnswer": ["A"],
+      "explanation": "Nodes before the checkpoint are not re-executed, but nodes after it re-execute, including LLM calls, API requests and interrupts. Replay does not read from a cache.",
+      "tags": ["Replay", "Time Travel"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/use-time-travel"
+    },
+    {
+      "id": "lg_w07_state_history_q107",
+      "topicId": "lg_w07_state_history",
+      "type": "DEBUGGING",
+      "difficulty": "INTERMEDIATE",
+      "title": "A developer expects this call to roll the thread back and overwrite the old history. What actually happens?",
+      "codeSnippet": "history = list(graph.get_state_history(config))\nold = history[3]\n\ngraph.update_state(old.config, {\"topic\": \"chickens\"})",
+      "options": [
+        {"id": "A", "text": "The old checkpoint is modified in place and the later ones are deleted"},
+        {"id": "B", "text": "A new checkpoint is created that branches from the old one; the original history stays intact"},
+        {"id": "C", "text": "It raises an error because old checkpoints are read-only"},
+        {"id": "D", "text": "The latest checkpoint is replaced by the old one"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "update_state does not roll back a thread; it creates a new checkpoint branching from the specified one. The original execution history is preserved.",
+      "tags": ["update_state", "Fork"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/use-time-travel"
+    },
+    {
+      "id": "lg_w07_state_history_q108",
+      "topicId": "lg_w07_state_history",
+      "type": "CODE_READING",
+      "difficulty": "ADVANCED",
+      "title": "The thread has finished with values {'foo': 'b', 'bar': ['a', 'b']}. What do the values look like after update_state?",
+      "codeSnippet": "class State(TypedDict):\n    foo: str\n    bar: Annotated[list[str], add]\n\ngraph.update_state(config, {\"foo\": \"c\", \"bar\": [\"c\"]})\nprint(graph.get_state(config).values)",
+      "options": [
+        {"id": "A", "text": "{'foo': 'c', 'bar': ['c']}"},
+        {"id": "B", "text": "{'foo': 'b', 'bar': ['a', 'b', 'c']}"},
+        {"id": "C", "text": "{'foo': 'c', 'bar': ['a', 'b', 'c']}"},
+        {"id": "D", "text": "It raises an error because the thread is already finished"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "update_state creates a new checkpoint and passes values through the reducers: foo has no reducer so it is overwritten, while bar uses add so it accumulates. Overwriting bar would ignore its reducer.",
+      "tags": ["update_state", "Reducer"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/checkpointers"
+    },
+    {
+      "id": "lg_w07_durability_q101",
+      "topicId": "lg_w07_durability",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "Which call deletes all checkpoints stored for one thread?",
+      "options": [
+        {"id": "A", "text": "checkpointer.delete_thread(thread_id)"},
+        {"id": "B", "text": "graph.update_state(config, None)"},
+        {"id": "C", "text": "store.delete(namespace)"},
+        {"id": "D", "text": "graph.clear(thread_id)"}
+      ],
+      "correctAnswer": ["A"],
+      "explanation": "The docs delete a thread's checkpoints with checkpointer.delete_thread(thread_id). store.delete only removes an item from a Store, not checkpoints.",
+      "tags": ["Checkpointer", "Threads"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/add-memory"
+    },
+    {
+      "id": "lg_w07_durability_q102",
+      "topicId": "lg_w07_durability",
+      "type": "CODE_COMPLETION",
+      "difficulty": "INTERMEDIATE",
+      "title": "Fill in the keyword argument that selects the durability mode for this run.",
+      "codeSnippet": "graph.stream(\n    {\"input\": \"test\"},\n    ______=\"sync\"\n)",
+      "options": [
+        {"id": "A", "text": "persistence"},
+        {"id": "B", "text": "checkpoint_mode"},
+        {"id": "C", "text": "durability"},
+        {"id": "D", "text": "save"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "The durability mode (\"exit\", \"async\" or \"sync\") is passed with the durability argument of any graph execution method.",
+      "tags": ["Durability"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/checkpointers"
+    },
+    {
+      "id": "lg_w07_durability_q103",
+      "topicId": "lg_w07_durability",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "Which statements about LangGraph durability modes are correct?",
+      "options": [
+        {"id": "A", "text": "\"exit\" persists changes only when the run exits (success, error or interrupt)"},
+        {"id": "B", "text": "\"async\" persists while the next step runs, with a small risk of a lost checkpoint if the process crashes"},
+        {"id": "C", "text": "\"sync\" writes each checkpoint before the next step starts"},
+        {"id": "D", "text": "\"exit\" is the most durable mode and recovers from mid-run crashes"},
+        {"id": "E", "text": "\"sync\" has no performance overhead"}
+      ],
+      "correctAnswer": ["A", "B", "C"],
+      "explanation": "exit is the least durable (best performance), async is in between, and sync is the most durable at the cost of some overhead. exit cannot recover from a crash mid-execution.",
+      "tags": ["Durability", "Fault Tolerance"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/checkpointers"
+    },
+    {
+      "id": "lg_w07_durability_q104",
+      "topicId": "lg_w07_durability",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "ADVANCED",
+      "title": "Nodes X and Y run in the same super-step. X succeeds, Y raises an error. What does LangGraph do when you resume from that super-step?",
+      "options": [
+        {"id": "A", "text": "It re-runs both X and Y because the super-step never completed"},
+        {"id": "B", "text": "It discards X's output and only keeps the previous checkpoint"},
+        {"id": "C", "text": "It cannot resume until the failing node is removed from the graph"},
+        {"id": "D", "text": "It reuses X's stored pending writes and does not re-run X"}
+      ],
+      "correctAnswer": ["D"],
+      "explanation": "LangGraph stores pending writes from nodes that completed successfully in the failed super-step, so resuming does not re-run them. Only the failed work is retried.",
+      "tags": ["Fault Tolerance", "Pending Writes"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/checkpointers"
+    },
+    {
+      "id": "lg_w07_durability_q105",
+      "topicId": "lg_w07_durability",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "Which checkpointer libraries do the docs describe as ideal for production use?",
+      "options": [
+        {"id": "A", "text": "PostgresSaver"},
+        {"id": "B", "text": "InMemorySaver"},
+        {"id": "C", "text": "MongoDBSaver"},
+        {"id": "D", "text": "SqliteSaver"}
+      ],
+      "correctAnswer": ["A", "C"],
+      "explanation": "The Postgres and MongoDB checkpointers are described as ideal for production. InMemorySaver is for experimentation and SqliteSaver for experimentation and local workflows.",
+      "tags": ["Checkpointer", "Production"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/checkpointers"
+    },
+    {
+      "id": "lg_w07_durability_q106",
+      "topicId": "lg_w07_durability",
+      "type": "CODE_READING",
+      "difficulty": "INTERMEDIATE",
+      "title": "Where does the AES key used by this serializer come from by default?",
+      "codeSnippet": "serde = EncryptedSerializer.from_pycryptodome_aes()\ncheckpointer = SqliteSaver(\n    sqlite3.connect(\"checkpoint.db\"),\n    serde=serde,\n)",
+      "options": [
+        {"id": "A", "text": "A random key generated on every run"},
+        {"id": "B", "text": "The LANGGRAPH_AES_KEY environment variable"},
+        {"id": "C", "text": "The thread_id of the current run"},
+        {"id": "D", "text": "A key stored inside checkpoint.db"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "from_pycryptodome_aes reads the key from LANGGRAPH_AES_KEY unless a key argument is passed. A random per-run key would make saved checkpoints unreadable later.",
+      "tags": ["Encryption", "Serialization"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/checkpointers"
+    },
+    {
+      "id": "lg_w07_durability_q107",
+      "topicId": "lg_w07_durability",
+      "type": "DEBUGGING",
+      "difficulty": "INTERMEDIATE",
+      "title": "This code is run for the first time against a brand-new Postgres database and does not work. What step is missing?",
+      "codeSnippet": "DB_URI = \"postgresql://postgres:postgres@localhost:5432/postgres\"\nwith PostgresSaver.from_conn_string(DB_URI) as checkpointer:\n    graph = builder.compile(checkpointer=checkpointer)\n    graph.invoke({\"messages\": [(\"user\", \"hi\")]}, config)",
+      "options": [
+        {"id": "A", "text": "The checkpointer must be created with InMemorySaver first"},
+        {"id": "B", "text": "durability=\"sync\" is mandatory for Postgres"},
+        {"id": "C", "text": "checkpointer.setup() must be called the first time to create the required tables"},
+        {"id": "D", "text": "thread_id must be removed from the config"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "Database-backed checkpointers need their schema created before use; for Postgres you call checkpointer.setup() the first time. A thread_id is still required.",
+      "tags": ["PostgresSaver", "Debugging"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/add-memory"
+    },
+    {
+      "id": "lg_w07_store_q101",
+      "topicId": "lg_w07_store",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "How are memories organized inside a LangGraph Store?",
+      "options": [
+        {"id": "A", "text": "By thread_id and checkpoint_id"},
+        {"id": "B", "text": "By a namespace tuple and a key, with a dict as the value"},
+        {"id": "C", "text": "By node name and step number"},
+        {"id": "D", "text": "By message id only"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "Memories are put under a namespace (a tuple such as (user_id, \"memories\")) with a unique key and a dictionary value. thread_id and checkpoint_id belong to the checkpointer.",
+      "tags": ["Store", "Namespace"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/stores"
+    },
+    {
+      "id": "lg_w07_store_q102",
+      "topicId": "lg_w07_store",
+      "type": "CODE_READING",
+      "difficulty": "BEGINNER",
+      "title": "What does the last line print?",
+      "codeSnippet": "store = InMemoryStore()\nns = (\"1\", \"memories\")\nstore.put(ns, \"k1\", {\"food_preference\": \"I like pizza\"})\n\nitems = store.search(ns)\nprint(items[0].value)",
+      "options": [
+        {"id": "A", "text": "k1"},
+        {"id": "B", "text": "('1', 'memories')"},
+        {"id": "C", "text": "{'food_preference': 'I like pizza'}"},
+        {"id": "D", "text": "An empty list because search needs a query"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "search without a query lists items under the namespace, and each Item exposes the stored dict as value. The key and namespace are separate attributes.",
+      "tags": ["Store", "put", "search"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/stores"
+    },
+    {
+      "id": "lg_w07_store_q103",
+      "topicId": "lg_w07_store",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "Items exist under (\"alice\", \"memories\") and (\"alice\", \"preferences\"). What does store.search((\"alice\",)) return?",
+      "options": [
+        {"id": "A", "text": "Only items stored exactly under (\"alice\",)"},
+        {"id": "B", "text": "Items from both sub-namespaces, because the namespace prefix matches by prefix"},
+        {"id": "C", "text": "Only items under (\"alice\", \"memories\")"},
+        {"id": "D", "text": "An error, because a full namespace is required"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "namespace_prefix is matched by prefix, so (\"alice\",) also returns items under deeper namespaces. To restrict to one level, pass the full namespace.",
+      "tags": ["Store", "Namespace", "search"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/stores"
+    },
+    {
+      "id": "lg_w07_store_q104",
+      "topicId": "lg_w07_store",
+      "type": "CODE_COMPLETION",
+      "difficulty": "INTERMEDIATE",
+      "title": "Complete the index configuration that enables semantic search in the store.",
+      "codeSnippet": "store = InMemoryStore(\n    index={\n        \"embed\": init_embeddings(\"openai:text-embedding-3-small\"),\n        \"______\": 1536,\n    }\n)",
+      "options": [
+        {"id": "A", "text": "dims"},
+        {"id": "B", "text": "limit"},
+        {"id": "C", "text": "model"},
+        {"id": "D", "text": "namespace"}
+      ],
+      "correctAnswer": ["A"],
+      "explanation": "The index config takes the embedding function under embed and the embedding dimensions under dims (optionally fields). limit is an argument of search, not of the index.",
+      "tags": ["Semantic Search", "Embeddings"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/stores"
+    },
+    {
+      "id": "lg_w07_store_q105",
+      "topicId": "lg_w07_store",
+      "type": "CODE_READING",
+      "difficulty": "ADVANCED",
+      "title": "In a store configured with an embedding index, what is the effect of index=False on item \"b\"?",
+      "codeSnippet": "ns = (\"user_123\", \"memories\")\nstore.put(ns, \"a\", {\"food_preference\": \"I love Italian cuisine\"})\nstore.put(\n    ns, \"b\", {\"system_info\": \"Last updated: 2024-01-01\"},\n    index=False,\n)",
+      "options": [
+        {"id": "A", "text": "Item b is not saved at all"},
+        {"id": "B", "text": "Item b is saved only for the current thread"},
+        {"id": "C", "text": "Item b is encrypted before it is stored"},
+        {"id": "D", "text": "Item b is stored and retrievable, but not embedded, so semantic search cannot find it"}
+      ],
+      "correctAnswer": ["D"],
+      "explanation": "index=False stores the item without embedding it: it remains retrievable but is not searchable by semantic query. It is not a thread-scoping or encryption option.",
+      "tags": ["Semantic Search", "Store"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/stores"
+    },
+    {
+      "id": "lg_w07_store_q106",
+      "topicId": "lg_w07_store",
+      "type": "CODE_COMPLETION",
+      "difficulty": "INTERMEDIATE",
+      "title": "Complete the line that searches long-term memory from inside a node.",
+      "codeSnippet": "async def call_model(state: MessagesState, runtime: Runtime[Context]):\n    user_id = runtime.context.user_id\n    namespace = (user_id, \"memories\")\n    memories = await runtime.______.asearch(\n        namespace, query=state[\"messages\"][-1].content, limit=3\n    )",
+      "options": [
+        {"id": "A", "text": "checkpointer"},
+        {"id": "B", "text": "store"},
+        {"id": "C", "text": "context"},
+        {"id": "D", "text": "memory"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "When the graph is compiled with store=..., the Runtime injected into the node exposes it as runtime.store. runtime.context only carries the user-provided context such as user_id.",
+      "tags": ["Runtime", "Store"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/add-memory"
+    },
+    {
+      "id": "lg_w07_store_q107",
+      "topicId": "lg_w07_store",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "Which are long-term memory types described in the LangGraph memory docs?",
+      "options": [
+        {"id": "A", "text": "Semantic memory (facts)"},
+        {"id": "B", "text": "Episodic memory (experiences)"},
+        {"id": "C", "text": "Procedural memory (instructions)"},
+        {"id": "D", "text": "Transient memory (GPU cache)"}
+      ],
+      "correctAnswer": ["A", "B", "C"],
+      "explanation": "The docs map semantic memory to facts, episodic memory to experiences and procedural memory to instructions such as the agent's system prompt. Transient GPU cache is not a memory type there.",
+      "tags": ["Memory Types"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/concepts/memory"
+    },
+    {
+      "id": "lg_w07_store_q108",
+      "topicId": "lg_w07_store",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "ADVANCED",
+      "title": "What is an advantage of writing memories in the background rather than in the hot path?",
+      "options": [
+        {"id": "A", "text": "New memories are immediately available in the very next step"},
+        {"id": "B", "text": "It removes the need to decide how often memories are written"},
+        {"id": "C", "text": "It eliminates the memory-writing latency from the primary application"},
+        {"id": "D", "text": "The agent itself decides what to remember in each turn"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "Background writing separates memory management from application logic and removes latency from the main flow. Immediate availability and in-turn decisions are hot-path traits, and background writing still needs a trigger strategy.",
+      "tags": ["Long-term Memory", "Writing Memories"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/concepts/memory"
+    },
+    {
+      "id": "lg_w07_msg_mgmt_q101",
+      "topicId": "lg_w07_msg_mgmt",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "With short-term memory enabled, how is the amount of history sent to the model decided?",
+      "options": [
+        {"id": "A", "text": "The checkpointer automatically sends the whole persisted state to the model"},
+        {"id": "B", "text": "The checkpointer trims history to the model's context window"},
+        {"id": "C", "text": "The node that calls the model chooses which state data goes into the model input"},
+        {"id": "D", "text": "Each new thread starts from a summary created by LangGraph"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "Persisting state does not automatically send all of it to the model; the model-calling node controls the input. That is why trimming, deleting or summarizing is done in your own graph logic.",
+      "tags": ["Short-term Memory", "Context Window"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/add-memory"
+    },
+    {
+      "id": "lg_w07_msg_mgmt_q102",
+      "topicId": "lg_w07_msg_mgmt",
+      "type": "CODE_READING",
+      "difficulty": "ADVANCED",
+      "title": "After this node runs, what happens to the messages stored in the graph state?",
+      "codeSnippet": "def call_model(state: MessagesState):\n    messages = trim_messages(\n        state[\"messages\"],\n        strategy=\"last\",\n        token_counter=count_tokens_approximately,\n        max_tokens=128,\n        start_on=\"human\",\n        end_on=(\"human\", \"tool\"),\n    )\n    response = model.invoke(messages)\n    return {\"messages\": [response]}",
+      "options": [
+        {"id": "A", "text": "Old messages stay in state; only the trimmed list is sent to the model and the response is appended"},
+        {"id": "B", "text": "Messages beyond 128 tokens are permanently deleted from state"},
+        {"id": "C", "text": "The state is replaced by the trimmed list plus the response"},
+        {"id": "D", "text": "The checkpoint is rewritten to hold only the last message"}
+      ],
+      "correctAnswer": ["A"],
+      "explanation": "trim_messages here only shapes the model input; it does not remove messages from state. Removing messages from state requires RemoveMessage.",
+      "tags": ["Trim Messages"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/add-memory"
+    },
+    {
+      "id": "lg_w07_msg_mgmt_q103",
+      "topicId": "lg_w07_msg_mgmt",
+      "type": "CODE_COMPLETION",
+      "difficulty": "BEGINNER",
+      "title": "Complete the node that removes all messages from the state.",
+      "codeSnippet": "from langchain.messages import RemoveMessage\nfrom langgraph.graph.message import REMOVE_ALL_MESSAGES\n\ndef delete_messages(state):\n    return {\"messages\": [RemoveMessage(id=______)]}",
+      "options": [
+        {"id": "A", "text": "None"},
+        {"id": "B", "text": "\"*\""},
+        {"id": "C", "text": "state[\"messages\"]"},
+        {"id": "D", "text": "REMOVE_ALL_MESSAGES"}
+      ],
+      "correctAnswer": ["D"],
+      "explanation": "RemoveMessage(id=REMOVE_ALL_MESSAGES) clears the whole message list. A single message id only removes that one message.",
+      "tags": ["RemoveMessage", "Delete Messages"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/add-memory"
+    },
+    {
+      "id": "lg_w07_msg_mgmt_q104",
+      "topicId": "lg_w07_msg_mgmt",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "ADVANCED",
+      "title": "When deleting messages from state, which constraints should you make sure the remaining history satisfies?",
+      "options": [
+        {"id": "A", "text": "Some providers expect the history to start with a user message"},
+        {"id": "B", "text": "Most providers require an assistant message with tool calls to be followed by the matching tool results"},
+        {"id": "C", "text": "LangGraph repairs invalid histories, so provider rules can be ignored"},
+        {"id": "D", "text": "RemoveMessage must always delete an even number of messages"}
+      ],
+      "correctAnswer": ["A", "B"],
+      "explanation": "The docs warn that the resulting history must be valid for your model provider. LangGraph does not repair it and there is no even-number rule.",
+      "tags": ["RemoveMessage", "Delete Messages"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/add-memory"
+    },
+    {
+      "id": "lg_w07_msg_mgmt_q105",
+      "topicId": "lg_w07_msg_mgmt",
+      "type": "DEBUGGING",
+      "difficulty": "ADVANCED",
+      "title": "The prune node should delete the two oldest messages but RemoveMessage does not work as expected. What is the problem?",
+      "codeSnippet": "from langchain.messages import RemoveMessage\n\nclass State(TypedDict):\n    messages: list\n\ndef prune(state: State):\n    return {\n        \"messages\": [RemoveMessage(id=m.id) for m in state[\"messages\"][:2]]\n    }",
+      "options": [
+        {"id": "A", "text": "RemoveMessage can only be used inside a conditional edge"},
+        {"id": "B", "text": "The messages key needs the add_messages reducer, for example by using MessagesState"},
+        {"id": "C", "text": "Only the last message can be removed, never the first two"},
+        {"id": "D", "text": "The graph must be compiled without a checkpointer"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "RemoveMessage only works with a state key that uses the add_messages reducer, such as MessagesState's messages. A plain list key has no reducer that interprets removals.",
+      "tags": ["RemoveMessage", "Reducer", "Debugging"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/add-memory"
+    }
+  ]
+}

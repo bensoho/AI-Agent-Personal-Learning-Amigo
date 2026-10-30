@@ -80,7 +80,9 @@ class QuestionBankValidatorTest {
         val dir = File("src/main/assets/questions")
         val parser = QuestionBankParser(Json { ignoreUnknownKeys = true })
         val manifest = parser.parseManifest(File(dir, "manifest.json").readText())
-        val weeks = manifest.weeks.map { parser.parseWeek(File(dir, it.file).readText()) }
+        val weeks = manifest.weeks.map { entry ->
+            parser.parseWeekFiles(entry) { File(dir, it).readText() }
+        }
 
         assertEquals(16, manifest.weeks.size)
         val errors = validator.validate(QuestionBank(manifest, weeks))
