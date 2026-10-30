@@ -3,8 +3,38 @@
   "week": 2,
   "module": "LangChain",
   "topics": [
-    {"id": "lc_w02_prompts", "name": "Prompt Templates", "description": "Reusable prompts with variables."},
-    {"id": "lc_w02_structured", "name": "Structured Output", "description": "Getting schema-conforming results from a model."}
+    {"id": "lc_w02_prompts", "name": "Prompt Templates", "description": "Reusable prompts with variables.", "notes": [
+      "## Prompt Template",
+      "- 把提示词写成带变量的模板，便于复用和测试。",
+      "```python",
+      "from langchain_core.prompts import ChatPromptTemplate",
+      "",
+      "prompt = ChatPromptTemplate.from_messages([",
+      "    (\"system\", \"Translate to {lang}.\"),",
+      "    (\"human\", \"{text}\"),",
+      "])",
+      "chain = prompt | model",
+      "chain.invoke({\"lang\": \"French\", \"text\": \"Hi\"})",
+      "```",
+      "- prompt.invoke 只负责格式化，返回 ChatPromptValue，不会调用模型。",
+      "- 用 | 把模板和模型组合成 Runnable 链。"
+    ]},
+    {"id": "lc_w02_structured", "name": "Structured Output", "description": "Getting schema-conforming results from a model.", "notes": [
+      "## Structured Output",
+      "- 让模型按预先定义的 schema 返回数据，而不是自由文本。",
+      "```python",
+      "from pydantic import BaseModel",
+      "",
+      "class Person(BaseModel):",
+      "    name: str",
+      "    age: int",
+      "",
+      "structured = model.with_structured_output(Person)",
+      "result = structured.invoke(\"Alice is 30 years old.\")",
+      "```",
+      "- 返回值已解析并校验为 Person 对象，无需手动解析 JSON。",
+      "- 字段名和描述会影响模型填写效果，应写清楚字段含义。"
+    ]}
   ],
   "questions": [
     {

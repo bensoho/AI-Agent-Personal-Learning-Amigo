@@ -3,8 +3,29 @@
   "week": 3,
   "module": "LangChain",
   "topics": [
-    {"id": "lc_w03_tools", "name": "Tools", "description": "Defining functions the model can request."},
-    {"id": "lc_w03_agents", "name": "Agent Loop", "description": "How an agent alternates between model calls and tool calls."}
+    {"id": "lc_w03_tools", "name": "Tools", "description": "Defining functions the model can request.", "notes": [
+      "## Tool",
+      "- Tool 是模型可以请求调用的函数，由名称、描述和参数 schema 组成。",
+      "```python",
+      "from langchain_core.tools import tool",
+      "",
+      "@tool",
+      "def get_weather(city: str) -> str:",
+      "    \"\"\"Get the current weather for a city.\"\"\"",
+      "    return f\"{city}: sunny\"",
+      "```",
+      "- docstring 会作为工具描述发送给模型，决定模型何时以及如何调用，要写清楚。",
+      "- 参数的类型注解会生成参数 schema。"
+    ]},
+    {"id": "lc_w03_agents", "name": "Agent Loop", "description": "How an agent alternates between model calls and tool calls.", "notes": [
+      "## Agent 循环",
+      "- 模型收到消息后，要么直接回答，要么返回带 tool_calls 的 AIMessage。",
+      "- 模型本身不执行工具，由 agent 运行时执行，并把 ToolMessage 追加回对话。",
+      "- 重复上述过程，直到模型不再请求工具并给出最终回答。",
+      "## 注意",
+      "- 限制最大循环次数，避免死循环。",
+      "- 工具出错时返回清晰的错误信息，模型才有机会修正参数。"
+    ]}
   ],
   "questions": [
     {

@@ -1,5 +1,6 @@
 package com.agentlearning.feature.quiz.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -33,13 +34,19 @@ fun ChoiceOptions(
             val container = when {
                 submitted && isCorrect -> MaterialTheme.colorScheme.primaryContainer
                 submitted && isSelected -> MaterialTheme.colorScheme.errorContainer
-                isSelected -> MaterialTheme.colorScheme.secondaryContainer
-                else -> MaterialTheme.colorScheme.surface
+                isSelected -> MaterialTheme.colorScheme.primaryContainer
+                else -> MaterialTheme.colorScheme.surfaceContainerLow
+            }
+            val borderColor = when {
+                submitted && isCorrect -> MaterialTheme.colorScheme.secondary
+                submitted && isSelected -> MaterialTheme.colorScheme.error
+                isSelected -> MaterialTheme.colorScheme.primary
+                else -> MaterialTheme.colorScheme.outlineVariant
             }
             Surface(
                 color = container,
                 shape = MaterialTheme.shapes.medium,
-                tonalElevation = 1.dp,
+                border = BorderStroke(if (isSelected || (submitted && isCorrect)) 1.5.dp else 1.dp, borderColor),
                 modifier = Modifier
                     .fillMaxWidth()
                     .selectable(
@@ -56,7 +63,7 @@ fun ChoiceOptions(
                     } else {
                         RadioButton(selected = isSelected, onClick = null, enabled = !submitted)
                     }
-                    Text("${option.id}. ${option.text}", modifier = Modifier.padding(start = 8.dp))
+                    Text("${option.id}. ${option.text}", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(start = 8.dp))
                 }
             }
         }

@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.Card
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -23,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.agentlearning.domain.model.DailyStat
+import com.agentlearning.ui.components.AppCard
 import com.agentlearning.ui.components.SectionTitle
 import com.agentlearning.ui.components.StatCard
 import com.agentlearning.ui.components.asPercent
@@ -70,7 +70,7 @@ fun StatisticsScreen(viewModel: StatisticsViewModel = hiltViewModel()) {
         item { SectionTitle("课程模块") }
         items(state.courses.size) { index ->
             val course = state.courses[index]
-            Card(Modifier.fillMaxWidth()) {
+            AppCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(course.course.title, style = MaterialTheme.typography.titleSmall)
                     val completion = if (course.total == 0) 0f else course.answered.toFloat() / course.total

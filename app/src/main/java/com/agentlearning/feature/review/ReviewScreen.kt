@@ -9,7 +9,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -21,6 +20,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.agentlearning.domain.model.ReviewFilter
 import com.agentlearning.domain.model.StudyMode
+import com.agentlearning.ui.components.AppCard
 import com.agentlearning.ui.components.EmptyHint
 import com.agentlearning.ui.components.displayName
 import com.agentlearning.ui.components.label
@@ -65,7 +65,7 @@ fun ReviewScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(questions, key = { it.id }) { question ->
-                    Card(Modifier.fillMaxWidth()) {
+                    AppCard(Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(question.title, style = MaterialTheme.typography.bodyLarge)
                             Text(

@@ -38,6 +38,7 @@ data class Topic(
     val weekTitle: String,
     val title: String,
     val description: String?,
+    val notes: String? = null,
 )
 
 data class TopicProgress(

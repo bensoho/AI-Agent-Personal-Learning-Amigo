@@ -3,6 +3,7 @@ package com.agentlearning.feature.quiz
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -31,6 +32,7 @@ import com.agentlearning.feature.quiz.components.AnswerExplanation
 import com.agentlearning.feature.quiz.components.ChoiceOptions
 import com.agentlearning.feature.quiz.components.CodeBlock
 import com.agentlearning.ui.components.EmptyHint
+import com.agentlearning.ui.components.Pill
 import com.agentlearning.ui.components.displayName
 import com.agentlearning.ui.components.label
 
@@ -86,11 +88,21 @@ fun QuizScreen(
                     progress = { (state.index + 1).toFloat() / state.questions.size },
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Text(
-                    "${question.type.displayName()} · ${question.difficulty.label()}" +
-                        if (question.isMultiSelect) " · 多选" else "",
-                    style = MaterialTheme.typography.labelMedium,
-                )
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Pill(question.type.displayName())
+                    Pill(
+                        question.difficulty.label(),
+                        container = MaterialTheme.colorScheme.tertiaryContainer,
+                        content = MaterialTheme.colorScheme.onTertiaryContainer,
+                    )
+                    if (question.isMultiSelect) {
+                        Pill(
+                            "多选",
+                            container = MaterialTheme.colorScheme.secondaryContainer,
+                            content = MaterialTheme.colorScheme.onSecondaryContainer,
+                        )
+                    }
+                }
                 Text(question.title, style = MaterialTheme.typography.titleMedium)
                 question.codeSnippet?.let { CodeBlock(it) }
                 ChoiceOptions(

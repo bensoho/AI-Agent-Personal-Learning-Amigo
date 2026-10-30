@@ -9,9 +9,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -40,6 +40,8 @@ import com.agentlearning.domain.model.StudyMode
 import com.agentlearning.feature.curriculum.CurriculumScreen
 import com.agentlearning.feature.curriculum.TopicDetailScreen
 import com.agentlearning.feature.home.HomeScreen
+import com.agentlearning.feature.knowledge.KnowledgeDetailScreen
+import com.agentlearning.feature.knowledge.KnowledgeScreen
 import com.agentlearning.feature.quiz.QuizScreen
 import com.agentlearning.feature.review.ReviewScreen
 import com.agentlearning.feature.settings.SettingsScreen
@@ -48,13 +50,17 @@ import com.agentlearning.feature.statistics.StatisticsScreen
 object Routes {
     const val HOME = "home"
     const val CURRICULUM = "curriculum"
+    const val KNOWLEDGE = "knowledge"
     const val REVIEW = "review"
     const val STATS = "stats"
     const val SETTINGS = "settings"
     const val TOPIC = "topic/{topicId}"
+    const val KNOWLEDGE_DETAIL = "knowledge/{topicId}"
     const val QUIZ = "quiz/{mode}?topicId={topicId}"
 
     fun topic(topicId: String) = "topic/$topicId"
+
+    fun knowledgeDetail(topicId: String) = "knowledge/$topicId"
 
     fun quiz(mode: StudyMode, topicId: String? = null) =
         "quiz/${mode.name}" + (topicId?.let { "?topicId=$it" } ?: "")
@@ -65,9 +71,9 @@ private data class TopLevelDestination(val route: String, val label: String, val
 private val topLevelDestinations = listOf(
     TopLevelDestination(Routes.HOME, "首页", Icons.Filled.Home),
     TopLevelDestination(Routes.CURRICULUM, "课程", Icons.Filled.List),
+    TopLevelDestination(Routes.KNOWLEDGE, "知识点", Icons.Filled.Info),
     TopLevelDestination(Routes.REVIEW, "复习", Icons.Filled.Refresh),
     TopLevelDestination(Routes.STATS, "统计", Icons.Filled.DateRange),
-    TopLevelDestination(Routes.SETTINGS, "设置", Icons.Filled.Settings),
 )
 
 @Composable
@@ -126,16 +132,32 @@ private fun AppScaffold() {
             modifier = Modifier.padding(padding),
         ) {
             composable(Routes.HOME) {
-                HomeScreen(onStartQuiz = { navController.navigate(Routes.quiz(it)) })
+                HomeScreen(
+                    onStartQuiz = { navController.navigate(Routes.quiz(it)) },
+                    onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                )
             }
             composable(Routes.CURRICULUM) {
                 CurriculumScreen(onTopicClick = { navController.navigate(Routes.topic(it)) })
+            }
+            composable(Routes.KNOWLEDGE) {
+                KnowledgeScreen(onTopicClick = { navController.navigate(Routes.knowledgeDetail(it)) })
             }
             composable(Routes.REVIEW) {
                 ReviewScreen(onStartQuiz = { navController.navigate(Routes.quiz(it)) })
             }
             composable(Routes.STATS) { StatisticsScreen() }
-            composable(Routes.SETTINGS) { SettingsScreen() }
+            composable(Routes.SETTINGS) { SettingsScreen(onBack = { navController.popBackStack() }) }
+            composable(
+                Routes.KNOWLEDGE_DETAIL,
+                arguments = listOf(navArgument("topicId") { type = NavType.StringType }),
+            ) { entry ->
+                val topicId = entry.arguments?.getString("topicId").orEmpty()
+                KnowledgeDetailScreen(
+                    onBack = { navController.popBackStack() },
+                    onStartQuiz = { navController.navigate(Routes.quiz(StudyMode.TOPIC, topicId)) },
+                )
+            }
             composable(
                 Routes.TOPIC,
                 arguments = listOf(navArgument("topicId") { type = NavType.StringType }),

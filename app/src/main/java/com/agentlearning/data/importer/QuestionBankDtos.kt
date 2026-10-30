@@ -26,7 +26,12 @@ data class WeekFileDto(
 )
 
 @Serializable
-data class TopicDto(val id: String, val name: String, val description: String? = null)
+data class TopicDto(
+    val id: String,
+    val name: String,
+    val description: String? = null,
+    val notes: List<String> = emptyList(),
+)
 
 @Serializable
 data class OptionDto(val id: String, val text: String)

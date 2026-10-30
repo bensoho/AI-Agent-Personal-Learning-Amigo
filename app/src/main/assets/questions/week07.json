@@ -1,4 +1,23 @@
 {"schemaVersion": 1, "week": 7, "module": "LangGraph", "topics": [
-  {"id": "lg_w07_checkpoint", "name": "Checkpointers", "description": "Saving graph state between steps."},
-  {"id": "lg_w07_memory", "name": "Threads & Memory", "description": "Short-term and long-term memory."}
+  {"id": "lg_w07_checkpoint", "name": "Checkpointers", "description": "Saving graph state between steps.", "notes": [
+    "## Checkpointer",
+    "- Checkpointer 在每一步之后保存图的 state 快照。",
+    "- 开发时可用 InMemorySaver，生产环境使用数据库支持的 checkpointer。",
+    "```python",
+    "from langgraph.checkpoint.memory import InMemorySaver",
+    "",
+    "graph = builder.compile(checkpointer=InMemorySaver())",
+    "```",
+    "- 有了 checkpoint 才能支持多轮记忆、中断恢复和时间回溯。"
+  ]},
+  {"id": "lg_w07_memory", "name": "Threads & Memory", "description": "Short-term and long-term memory.", "notes": [
+    "## Thread 与记忆",
+    "- thread_id 标识一段对话；同一 thread 的调用共享 checkpoint 里的 state。",
+    "```python",
+    "config = {\"configurable\": {\"thread_id\": \"user-1\"}}",
+    "graph.invoke({\"messages\": [...]}, config)",
+    "```",
+    "- 短期记忆：同一 thread 内的消息历史（checkpoint）。",
+    "- 长期记忆：跨 thread 保存的信息，使用 Store 管理。"
+  ]}
 ], "questions": []}

@@ -3,11 +3,64 @@
   "week": 5,
   "module": "LangGraph",
   "topics": [
-    {"id": "lg_state_001", "name": "What is State?", "description": "Understand graph state and what it is for."},
-    {"id": "lg_state_002", "name": "TypedDict", "description": "Defining the state schema."},
-    {"id": "lg_state_003", "name": "State Updates", "description": "How nodes return partial updates."},
-    {"id": "lg_state_004", "name": "Reducers", "description": "Controlling how updates are merged."},
-    {"id": "lg_state_005", "name": "MessagesState", "description": "The built-in state for chat messages."}
+    {"id": "lg_state_001", "name": "What is State?", "description": "Understand graph state and what it is for.", "notes": [
+      "## State",
+      "- State 是图中所有节点共享的数据，节点之间通过它传递信息。",
+      "- 每个节点读取当前 state，并返回对 state 的更新。",
+      "- API Key、工具定义等配置不属于 state。"
+    ]},
+    {"id": "lg_state_002", "name": "TypedDict", "description": "Defining the state schema.", "notes": [
+      "## 定义 State Schema",
+      "- 常用 TypedDict；也可以使用 dataclass 或 Pydantic BaseModel。",
+      "```python",
+      "from typing import TypedDict",
+      "",
+      "class State(TypedDict):",
+      "    count: int",
+      "    note: str",
+      "",
+      "builder = StateGraph(State)",
+      "```",
+      "- 字段名就是节点读取和更新的 key。",
+      "- TypedDict 只提供类型提示；Pydantic 模型可以做运行时校验。"
+    ]},
+    {"id": "lg_state_003", "name": "State Updates", "description": "How nodes return partial updates.", "notes": [
+      "## 状态更新",
+      "- 节点返回部分更新（dict），只写入返回的 key，其他 key 保持不变。",
+      "```python",
+      "def inc(state: State) -> dict:",
+      "    return {\"count\": state[\"count\"] + 1}",
+      "```",
+      "- 节点不应直接修改传入的 state，而应返回更新。",
+      "- graph.invoke(input) 返回最终的完整 state。"
+    ]},
+    {"id": "lg_state_004", "name": "Reducers", "description": "Controlling how updates are merged.", "notes": [
+      "## Reducer",
+      "- 默认行为：没有 reducer 的 key，新值会覆盖旧值。",
+      "- 用 Annotated 给 key 指定 reducer，控制多个更新如何合并。",
+      "```python",
+      "import operator",
+      "from typing import Annotated, TypedDict",
+      "",
+      "class State(TypedDict):",
+      "    logs: Annotated[list[str], operator.add]",
+      "```",
+      "- operator.add 会拼接列表，多个节点写入的日志都会保留。",
+      "- 并行节点同时更新同一个 key 时，需要 reducer 来合并。"
+    ]},
+    {"id": "lg_state_005", "name": "MessagesState", "description": "The built-in state for chat messages.", "notes": [
+      "## MessagesState",
+      "- 预置的 state，包含 messages 列表，并使用 add_messages reducer。",
+      "```python",
+      "from langgraph.graph import MessagesState",
+      "",
+      "def chat(state: MessagesState):",
+      "    reply = model.invoke(state[\"messages\"])",
+      "    return {\"messages\": [reply]}",
+      "```",
+      "- add_messages 会追加新消息；ID 相同的消息会被更新，而不是重复添加。",
+      "- 需要额外字段时，可以继承 MessagesState 并添加自己的 key。"
+    ]}
   ],
   "questions": [
     {

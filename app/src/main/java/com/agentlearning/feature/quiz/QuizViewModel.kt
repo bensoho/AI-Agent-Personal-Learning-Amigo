@@ -39,6 +39,7 @@ class QuizViewModel @Inject constructor(
     private val study: StudyRepository,
     private val settings: SettingsRepository,
     private val engine: QuizEngine,
+    private val sound: SoundPlayer,
     private val clock: Clock,
 ) : ViewModel() {
 
@@ -93,6 +94,7 @@ class QuizViewModel @Inject constructor(
         _state.update { it.copy(submitted = true, lastCorrect = isCorrect, correctCount = it.correctCount + if (isCorrect) 1 else 0) }
 
         viewModelScope.launch {
+            if (settings.soundEnabled.first()) sound.play(isCorrect)
             try {
                 study.recordAnswer(question.id, sessionId, s.selected, isCorrect, seconds)
                 if (s.isLast) sessionId?.let { study.finishSession(it) }

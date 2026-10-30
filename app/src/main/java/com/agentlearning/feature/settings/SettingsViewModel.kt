@@ -26,6 +26,8 @@ import javax.inject.Inject
 data class SettingsUiState(
     val dailyGoal: Int = 10,
     val bankVersion: Int = 0,
+    val fontScale: Float = 1f,
+    val soundEnabled: Boolean = true,
     val message: String? = null,
     val pendingRestore: BackupPreview? = null,
 )
@@ -43,12 +45,24 @@ class SettingsViewModel @Inject constructor(
     val uiState: StateFlow<SettingsUiState> = combine(
         settings.dailyGoal,
         settings.bankContentVersion,
+        settings.fontScale,
+        settings.soundEnabled,
         transient,
-    ) { goal, version, t -> SettingsUiState(goal, version, t.message, t.preview) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
+    ) { goal, version, fontScale, sound, t ->
+        SettingsUiState(goal, version, fontScale, sound, t.message, t.preview)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
     fun setDailyGoal(value: Int) {
         viewModelScope.launch { settings.setDailyGoal(value) }
+    }
+
+    fun setFontScale(value: Float) {
+        // Slider steps produce values like 0.90000004; round so the default compares equal to 1.0.
+        viewModelScope.launch { settings.setFontScale(Math.round(value * 100) / 100f) }
+    }
+
+    fun setSoundEnabled(value: Boolean) {
+        viewModelScope.launch { settings.setSoundEnabled(value) }
     }
 
     fun export(uri: Uri) = launchWithMessage {

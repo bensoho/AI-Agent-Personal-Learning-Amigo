@@ -45,6 +45,7 @@ class QuestionMapper @Inject constructor(private val json: Json) {
                     title = topic.name,
                     description = topic.description,
                     sortOrder = index,
+                    notes = topic.notes.takeIf { it.isNotEmpty() }?.joinToString("\n"),
                 )
             }
             week.questions.forEach { questions += toEntity(it, manifest.contentVersion) }
@@ -89,4 +90,4 @@ class QuestionMapper @Inject constructor(private val json: Json) {
 
 fun CourseEntity.toDomain() = Course(id, title, monthNumber)
 
-fun TopicEntity.toDomain() = Topic(id, courseId, weekNumber, weekTitle, title, description)
+fun TopicEntity.toDomain() = Topic(id, courseId, weekNumber, weekTitle, title, description, notes)

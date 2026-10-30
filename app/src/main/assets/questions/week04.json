@@ -3,8 +3,23 @@
   "week": 4,
   "module": "LangChain",
   "topics": [
-    {"id": "lc_w04_embeddings", "name": "Embeddings & Vector Stores", "description": "Representing text as vectors for similarity search."},
-    {"id": "lc_w04_pipeline", "name": "Retrieval Pipeline", "description": "Indexing and retrieval steps of a RAG system."}
+    {"id": "lc_w04_embeddings", "name": "Embeddings & Vector Stores", "description": "Representing text as vectors for similarity search.", "notes": [
+      "## Embedding",
+      "- 把文本转换成向量，语义相近的文本向量距离更近。",
+      "- 同一套检索中，文档和查询必须使用同一个 embedding 模型。",
+      "## Vector Store",
+      "- 保存文档向量及原文、元数据，支持查询最相似的 k 个结果。",
+      "- 相似度常用余弦相似度或点积。"
+    ]},
+    {"id": "lc_w04_pipeline", "name": "Retrieval Pipeline", "description": "Indexing and retrieval steps of a RAG system.", "notes": [
+      "## 索引阶段（离线）",
+      "- 加载文档，切分成块（chunk），向量化，写入向量库。",
+      "- 块太大噪声多，块太小会丢失上下文，需要结合重叠长度调整。",
+      "## 检索与生成（在线）",
+      "- 把用户问题向量化，检索最相关的块，拼入提示词交给模型回答。",
+      "- RAG 通过提供外部上下文来回答，不需要修改模型权重。",
+      "- 可要求模型基于检索内容作答并引用来源，以减少幻觉。"
+    ]}
   ],
   "questions": [
     {

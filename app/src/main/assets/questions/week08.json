@@ -1,4 +1,18 @@
 {"schemaVersion": 1, "week": 8, "module": "LangGraph", "topics": [
-  {"id": "lg_w08_interrupt", "name": "Interrupts", "description": "Pausing a graph for human input."},
-  {"id": "lg_w08_resume", "name": "Resuming Execution", "description": "Continuing from a saved checkpoint."}
+  {"id": "lg_w08_interrupt", "name": "Interrupts", "description": "Pausing a graph for human input.", "notes": [
+    "## Interrupt",
+    "- 在节点中调用 interrupt() 暂停图的执行，等待人工输入。",
+    "- 必须配置 checkpointer，才能保存暂停时的状态。",
+    "- 典型场景：审批工具调用、人工修改草稿、补充缺失信息。"
+  ]},
+  {"id": "lg_w08_resume", "name": "Resuming Execution", "description": "Continuing from a saved checkpoint.", "notes": [
+    "## 恢复执行",
+    "- 使用相同的 thread_id，并用 Command(resume=...) 传入人工的回复继续运行。",
+    "```python",
+    "from langgraph.types import Command",
+    "",
+    "graph.invoke(Command(resume=\"approved\"), config)",
+    "```",
+    "- 恢复时被中断的节点会从头重新执行，interrupt() 返回人工提供的值，所以中断前的代码应避免副作用。"
+  ]}
 ], "questions": []}

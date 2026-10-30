@@ -12,24 +12,27 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.agentlearning.domain.model.LearningStatus
 import com.agentlearning.domain.model.TopicProgress
+import com.agentlearning.ui.components.AppCard
 import com.agentlearning.ui.components.EmptyHint
+import com.agentlearning.ui.components.Pill
 import com.agentlearning.ui.components.SectionTitle
 import com.agentlearning.ui.components.displayName
 import com.agentlearning.ui.components.label
@@ -60,14 +63,21 @@ fun CurriculumScreen(
             }
             course.weeks.forEach { week ->
                 item(key = "week-${week.weekNumber}") {
-                    Card(Modifier.fillMaxWidth()) {
+                    AppCard(Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(vertical = 12.dp)) {
                             Row(
                                 Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                SectionTitle("Week %02d: %s".format(week.weekNumber, week.title))
-                                Text(week.status.label(), style = MaterialTheme.typography.labelMedium)
+                                SectionTitle("Week %02d  %s".format(week.weekNumber, week.title), Modifier.weight(1f))
+                                Pill(week.status.label())
+                            }
+                            if (week.total > 0) {
+                                LinearProgressIndicator(
+                                    progress = { week.answered.toFloat() / week.total },
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                                )
                             }
                             week.topics.forEach { progress ->
                                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
@@ -131,7 +141,7 @@ fun TopicDetailScreen(
                     }
                 }
                 items(state.questions, key = { it.id }) { question ->
-                    Card(Modifier.fillMaxWidth()) {
+                    AppCard(Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(question.title, style = MaterialTheme.typography.bodyLarge)
                             Text(

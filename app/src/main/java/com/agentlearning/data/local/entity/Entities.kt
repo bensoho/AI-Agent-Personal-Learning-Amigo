@@ -34,6 +34,8 @@ data class TopicEntity(
     val title: String,
     val description: String?,
     val sortOrder: Int,
+    // Study notes shown in the knowledge menu; lines separated by \n.
+    val notes: String? = null,
 )
 
 @Entity(

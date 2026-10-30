@@ -1,4 +1,25 @@
 {"schemaVersion": 1, "week": 6, "module": "LangGraph", "topics": [
-  {"id": "lg_w06_edges", "name": "Normal Edges", "description": "Fixed transitions between nodes."},
-  {"id": "lg_w06_routing", "name": "Conditional Edges", "description": "Choosing the next node at runtime."}
+  {"id": "lg_w06_edges", "name": "Normal Edges", "description": "Fixed transitions between nodes.", "notes": [
+    "## Edge",
+    "- Edge 定义节点之间的执行顺序。",
+    "```python",
+    "builder.add_edge(START, \"a\")",
+    "builder.add_edge(\"a\", \"b\")",
+    "builder.add_edge(\"b\", END)",
+    "```",
+    "- START 是入口，END 表示结束。",
+    "- 一个节点可以连到多个后续节点，它们会在同一步并行执行。"
+  ]},
+  {"id": "lg_w06_routing", "name": "Conditional Edges", "description": "Choosing the next node at runtime.", "notes": [
+    "## Conditional Edge",
+    "- 用路由函数根据当前 state 决定下一个节点。",
+    "```python",
+    "def route(state: State) -> str:",
+    "    return \"tools\" if state[\"needs_tool\"] else END",
+    "",
+    "builder.add_conditional_edges(\"agent\", route)",
+    "```",
+    "- 路由函数返回下一个节点的名称（或 END）。",
+    "- 也可以传入映射字典，把返回值映射到节点名。"
+  ]}
 ], "questions": []}

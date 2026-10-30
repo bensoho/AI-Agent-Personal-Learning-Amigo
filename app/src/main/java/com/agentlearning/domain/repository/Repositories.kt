@@ -43,8 +43,12 @@ interface StatsRepository {
 interface SettingsRepository {
     val dailyGoal: Flow<Int>
     val bankContentVersion: Flow<Int>
+    val fontScale: Flow<Float>
+    val soundEnabled: Flow<Boolean>
     suspend fun setDailyGoal(value: Int)
     suspend fun setBankContentVersion(value: Int)
+    suspend fun setFontScale(value: Float)
+    suspend fun setSoundEnabled(value: Boolean)
 }
 
 class BackupException(message: String) : Exception(message)

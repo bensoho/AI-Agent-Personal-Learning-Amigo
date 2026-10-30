@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "contentVersion": 1,
+  "contentVersion": 2,
   "courses": [
     {"id": "month1", "title": "LangChain", "monthNumber": 1, "sortOrder": 1},
     {"id": "month2", "title": "LangGraph", "monthNumber": 2, "sortOrder": 2},

@@ -2,6 +2,8 @@ package com.agentlearning.data.local
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.agentlearning.data.local.dao.AnswerRecordDao
 import com.agentlearning.data.local.dao.CourseDao
 import com.agentlearning.data.local.dao.QuestionDao
@@ -24,7 +26,7 @@ import com.agentlearning.data.local.entity.TopicEntity
         ReviewRecordEntity::class,
         StudySessionEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -37,5 +39,11 @@ abstract class AppDatabase : RoomDatabase() {
 
     companion object {
         const val NAME = "agent_learning.db"
+
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE topics ADD COLUMN notes TEXT")
+            }
+        }
     }
 }

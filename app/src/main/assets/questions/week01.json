@@ -3,9 +3,45 @@
   "week": 1,
   "module": "LangChain",
   "topics": [
-    {"id": "lc_w01_tokens", "name": "Tokens & Context Window", "description": "How LLMs read text and what limits a single request."},
-    {"id": "lc_w01_messages", "name": "Chat Models & Messages", "description": "Calling chat models and the message types LangChain uses."},
-    {"id": "lc_w01_sampling", "name": "Sampling Parameters", "description": "How parameters such as temperature affect output."}
+    {"id": "lc_w01_tokens", "name": "Tokens & Context Window", "description": "How LLMs read text and what limits a single request.", "notes": [
+      "## 什么是 Token",
+      "- Token 是模型读取和生成文本的基本单位，可能是一个词、词的一部分或一个符号。",
+      "- 不同模型的分词器不同，同一段文字的 token 数也不同。",
+      "- 计费和长度限制都以 token 计算。",
+      "## 上下文窗口（Context Window）",
+      "- 单次请求中模型能处理的 token 上限，包含输入（提示词、历史消息、检索内容）和输出。",
+      "- 超出上限时需要截断历史、摘要压缩，或只检索相关片段（RAG）。",
+      "## 实践要点",
+      "- 估算 token 用量，并为输出预留空间。",
+      "- 不要把整份文档直接塞进提示词，优先检索相关部分。"
+    ]},
+    {"id": "lc_w01_messages", "name": "Chat Models & Messages", "description": "Calling chat models and the message types LangChain uses.", "notes": [
+      "## 消息类型",
+      "- SystemMessage：设定角色和规则。",
+      "- HumanMessage：用户输入。",
+      "- AIMessage：模型回复，工具调用请求放在 tool_calls 中。",
+      "- ToolMessage：把工具执行结果返回给模型。",
+      "## 调用聊天模型",
+      "```python",
+      "from langchain.chat_models import init_chat_model",
+      "",
+      "model = init_chat_model(\"openai:gpt-4o-mini\", temperature=0)",
+      "response = model.invoke(\"Say hello in one word.\")",
+      "print(response.content)",
+      "```",
+      "- invoke 接受字符串或消息列表，返回 AIMessage。",
+      "- 文本内容通过 response.content 读取；AIMessage 是对象，不能像 dict 一样取值。"
+    ]},
+    {"id": "lc_w01_sampling", "name": "Sampling Parameters", "description": "How parameters such as temperature affect output.", "notes": [
+      "## Temperature",
+      "- 控制采样随机性：越低越确定，越高越多样。",
+      "- 需要稳定输出时使用较低值（如 0）。",
+      "- 即使 temperature=0，也不保证每次逐字相同。",
+      "## 其他常见参数",
+      "- max_tokens：限制输出长度。",
+      "- top_p：只在累计概率最高的一批候选 token 中采样。",
+      "- 不同提供商支持的参数名称和范围可能不同，以官方文档为准。"
+    ]}
   ],
   "questions": [
     {
