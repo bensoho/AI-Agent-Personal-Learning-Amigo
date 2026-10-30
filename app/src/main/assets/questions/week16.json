@@ -1,0 +1,4 @@
+{"schemaVersion": 1, "week": 16, "module": "Production", "topics": [
+  {"id": "pr_w16_plan", "name": "Final Project Planning", "description": "Scope, architecture and milestones."},
+  {"id": "pr_w16_review", "name": "Final Project Review", "description": "Reviewing the finished project."}
+], "questions": []}

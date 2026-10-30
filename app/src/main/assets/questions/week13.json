@@ -1,0 +1,4 @@
+{"schemaVersion": 1, "week": 13, "module": "Production", "topics": [
+  {"id": "pr_w13_boundaries", "name": "Service Boundaries", "description": "Where the agent sits in a system."},
+  {"id": "pr_w13_reliability", "name": "Reliability", "description": "Retries, timeouts and fallbacks."}
+], "questions": []}

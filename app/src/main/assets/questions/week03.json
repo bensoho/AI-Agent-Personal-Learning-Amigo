@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "week": 3,
+  "module": "LangChain",
+  "topics": [
+    {"id": "lc_w03_tools", "name": "Tools", "description": "Defining functions the model can request."},
+    {"id": "lc_w03_agents", "name": "Agent Loop", "description": "How an agent alternates between model calls and tool calls."}
+  ],
+  "questions": [
+    {
+      "id": "lc_w03_tools_q001",
+      "topicId": "lc_w03_tools",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "Why does the docstring of a function decorated with @tool matter?",
+      "options": [
+        {"id": "A", "text": "It is only for human readers and is ignored by the framework"},
+        {"id": "B", "text": "It becomes the tool description the model uses to decide when and how to call the tool"},
+        {"id": "C", "text": "It is executed when the tool is called"},
+        {"id": "D", "text": "It defines the return type"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "The name, description and argument schema are sent to the model. A clear docstring improves tool selection.",
+      "tags": ["Tools"],
+      "technology": "LangChain",
+      "apiVersion": "v1"
+    },
+    {
+      "id": "lc_w03_agents_q001",
+      "topicId": "lc_w03_agents",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "When a model decides to use a tool, what actually happens?",
+      "options": [
+        {"id": "A", "text": "The model runs the Python function itself inside the provider"},
+        {"id": "B", "text": "The model returns an AIMessage with tool_calls; your application or agent runtime executes the tool and sends the result back"},
+        {"id": "C", "text": "The model downloads the function from LangSmith"},
+        {"id": "D", "text": "The conversation ends"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "The model only requests a call by name and arguments. The runtime runs the tool and appends a ToolMessage so the model can continue.",
+      "tags": ["Tool Calling", "Agent Loop"],
+      "technology": "LangChain",
+      "apiVersion": "v1"
+    }
+  ]
+}

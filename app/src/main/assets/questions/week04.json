@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "week": 4,
+  "module": "LangChain",
+  "topics": [
+    {"id": "lc_w04_embeddings", "name": "Embeddings & Vector Stores", "description": "Representing text as vectors for similarity search."},
+    {"id": "lc_w04_pipeline", "name": "Retrieval Pipeline", "description": "Indexing and retrieval steps of a RAG system."}
+  ],
+  "questions": [
+    {
+      "id": "lc_w04_embeddings_q001",
+      "topicId": "lc_w04_embeddings",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "What property makes embeddings useful for retrieval?",
+      "options": [
+        {"id": "A", "text": "Texts with similar meaning are mapped to vectors that are close together"},
+        {"id": "B", "text": "They compress text losslessly so it can be restored exactly"},
+        {"id": "C", "text": "They remove the need for a vector store"},
+        {"id": "D", "text": "They translate text into SQL"}
+      ],
+      "correctAnswer": ["A"],
+      "explanation": "Similarity search compares the query vector with stored document vectors and returns the nearest ones.",
+      "tags": ["Embeddings"],
+      "technology": "LangChain",
+      "apiVersion": "v1"
+    },
+    {
+      "id": "lc_w04_pipeline_q001",
+      "topicId": "lc_w04_pipeline",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "Which steps are typically part of the indexing phase of a RAG system?",
+      "options": [
+        {"id": "A", "text": "Load documents"},
+        {"id": "B", "text": "Split documents into chunks"},
+        {"id": "C", "text": "Embed the chunks and store them in a vector store"},
+        {"id": "D", "text": "Fine-tune the base model weights on every document"}
+      ],
+      "correctAnswer": ["A", "B", "C"],
+      "explanation": "Indexing loads, splits, embeds and stores content. Retrieval later finds relevant chunks and passes them to the model as context. RAG does not require changing model weights.",
+      "tags": ["RAG", "Indexing"],
+      "technology": "LangChain",
+      "apiVersion": "v1"
+    }
+  ]
+}

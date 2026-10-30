@@ -1,0 +1,4 @@
+{"schemaVersion": 1, "week": 11, "module": "Agent Engineering", "topics": [
+  {"id": "ae_w11_tracing", "name": "Tracing Basics", "description": "Capturing runs in LangSmith."},
+  {"id": "ae_w11_metadata", "name": "Run Metadata", "description": "Tags and metadata for filtering traces."}
+], "questions": []}

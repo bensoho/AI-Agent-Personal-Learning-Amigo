@@ -1,0 +1,4 @@
+{"schemaVersion": 1, "week": 12, "module": "Agent Engineering", "topics": [
+  {"id": "ae_w12_datasets", "name": "Datasets", "description": "Building evaluation datasets."},
+  {"id": "ae_w12_evaluators", "name": "Evaluators", "description": "Scoring agent outputs."}
+], "questions": []}

@@ -1,0 +1,4 @@
+{"schemaVersion": 1, "week": 14, "module": "Production", "topics": [
+  {"id": "pr_w14_testing", "name": "Testing Agents", "description": "Unit and integration tests for agent workflows."},
+  {"id": "pr_w14_security", "name": "Security", "description": "Prompt injection and tool permissions."}
+], "questions": []}

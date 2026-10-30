@@ -1,0 +1,4 @@
+{"schemaVersion": 1, "week": 9, "module": "Agent Engineering", "topics": [
+  {"id": "ae_w09_supervisor", "name": "Supervisor Pattern", "description": "A coordinator agent routing work to specialists."},
+  {"id": "ae_w09_handoff", "name": "Handoffs", "description": "Transferring control between agents."}
+], "questions": []}

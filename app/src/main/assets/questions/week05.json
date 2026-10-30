@@ -1,0 +1,163 @@
+{
+  "schemaVersion": 1,
+  "week": 5,
+  "module": "LangGraph",
+  "topics": [
+    {"id": "lg_state_001", "name": "What is State?", "description": "Understand graph state and what it is for."},
+    {"id": "lg_state_002", "name": "TypedDict", "description": "Defining the state schema."},
+    {"id": "lg_state_003", "name": "State Updates", "description": "How nodes return partial updates."},
+    {"id": "lg_state_004", "name": "Reducers", "description": "Controlling how updates are merged."},
+    {"id": "lg_state_005", "name": "MessagesState", "description": "The built-in state for chat messages."}
+  ],
+  "questions": [
+    {
+      "id": "lg_state_q001",
+      "topicId": "lg_state_001",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "What is the purpose of State in LangGraph?",
+      "options": [
+        {"id": "A", "text": "Define all tools"},
+        {"id": "B", "text": "Maintain shared graph data"},
+        {"id": "C", "text": "Store API keys"},
+        {"id": "D", "text": "Connect to vector databases"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "State stores data shared across graph nodes. Each node reads the current state and returns updates to it.",
+      "tags": ["State", "Fundamentals"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/overview"
+    },
+    {
+      "id": "lg_state_q002",
+      "topicId": "lg_state_002",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "Which of the following can be used as the state schema of a StateGraph?",
+      "options": [
+        {"id": "A", "text": "A TypedDict"},
+        {"id": "B", "text": "A dataclass"},
+        {"id": "C", "text": "A Pydantic BaseModel"},
+        {"id": "D", "text": "A plain str"}
+      ],
+      "correctAnswer": ["A", "B", "C"],
+      "explanation": "TypedDict is the most common choice, and dataclasses and Pydantic models are also supported. A bare str has no named fields for nodes to update.",
+      "tags": ["State", "TypedDict"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/overview"
+    },
+    {
+      "id": "lg_state_q003",
+      "topicId": "lg_state_003",
+      "type": "CODE_READING",
+      "difficulty": "BEGINNER",
+      "title": "What does this program print?",
+      "codeSnippet": "from typing import TypedDict\nfrom langgraph.graph import StateGraph, START, END\n\nclass State(TypedDict):\n    count: int\n    note: str\n\ndef inc(state: State) -> dict:\n    return {\"count\": state[\"count\"] + 1}\n\nbuilder = StateGraph(State)\nbuilder.add_node(\"inc\", inc)\nbuilder.add_edge(START, \"inc\")\nbuilder.add_edge(\"inc\", END)\ngraph = builder.compile()\n\nprint(graph.invoke({\"count\": 1, \"note\": \"hi\"}))",
+      "options": [
+        {"id": "A", "text": "{'count': 2}"},
+        {"id": "B", "text": "{'count': 2, 'note': 'hi'}"},
+        {"id": "C", "text": "{'count': 1, 'note': 'hi'}"},
+        {"id": "D", "text": "An error, because inc does not return the whole state"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "A node returns a partial update. Keys it does not return, such as note, keep their previous values.",
+      "tags": ["State Updates", "Nodes"],
+      "technology": "LangGraph",
+      "apiVersion": "v1"
+    },
+    {
+      "id": "lg_state_q004",
+      "topicId": "lg_state_004",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "If a state key has no reducer, what happens when a node returns a new value for it?",
+      "options": [
+        {"id": "A", "text": "The new value is appended to the old one"},
+        {"id": "B", "text": "The new value overwrites the old value"},
+        {"id": "C", "text": "The graph raises an error"},
+        {"id": "D", "text": "The old value is kept and the update is ignored"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "Without a reducer the default behavior is to overwrite the key. Use a reducer to combine values instead.",
+      "tags": ["Reducers"],
+      "technology": "LangGraph",
+      "apiVersion": "v1"
+    },
+    {
+      "id": "lg_state_q005",
+      "topicId": "lg_state_004",
+      "type": "CODE_COMPLETION",
+      "difficulty": "INTERMEDIATE",
+      "title": "Fill in the blank so that lists returned by different nodes are concatenated.",
+      "codeSnippet": "import operator\nfrom typing import Annotated, TypedDict\n\nclass State(TypedDict):\n    logs: Annotated[list[str], ______]",
+      "options": [
+        {"id": "A", "text": "operator.add"},
+        {"id": "B", "text": "operator.sub"},
+        {"id": "C", "text": "len"},
+        {"id": "D", "text": "str.join"}
+      ],
+      "correctAnswer": ["A"],
+      "explanation": "The second argument of Annotated is the reducer. operator.add(old, new) concatenates two lists.",
+      "tags": ["Reducers", "Annotated"],
+      "technology": "LangGraph",
+      "apiVersion": "v1"
+    },
+    {
+      "id": "lg_state_q006",
+      "topicId": "lg_state_005",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "What does the prebuilt MessagesState provide?",
+      "options": [
+        {"id": "A", "text": "A messages key that uses the add_messages reducer"},
+        {"id": "B", "text": "A database connection for chat history"},
+        {"id": "C", "text": "An automatic tool-calling loop"},
+        {"id": "D", "text": "A streaming server"}
+      ],
+      "correctAnswer": ["A"],
+      "explanation": "MessagesState is a ready-made state with a messages list annotated with add_messages. It does not execute tools or persist data by itself.",
+      "tags": ["MessagesState"],
+      "technology": "LangGraph",
+      "apiVersion": "v1"
+    },
+    {
+      "id": "lg_state_q007",
+      "topicId": "lg_state_005",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "How does add_messages merge a returned message into the existing list?",
+      "options": [
+        {"id": "A", "text": "It always replaces the whole list"},
+        {"id": "B", "text": "It appends new messages and replaces an existing message that has the same ID"},
+        {"id": "C", "text": "It sorts messages alphabetically"},
+        {"id": "D", "text": "It drops all messages except the last one"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "add_messages appends new messages and updates a message in place when the ID already exists.",
+      "tags": ["MessagesState", "Reducers"],
+      "technology": "LangGraph",
+      "apiVersion": "v1"
+    },
+    {
+      "id": "lg_state_q008",
+      "topicId": "lg_state_005",
+      "type": "DEBUGGING",
+      "difficulty": "INTERMEDIATE",
+      "title": "The chatbot forgets earlier turns. What is the bug?",
+      "codeSnippet": "class State(TypedDict):\n    messages: list\n\ndef chat(state: State):\n    reply = model.invoke(state[\"messages\"])\n    return {\"messages\": reply}",
+      "options": [
+        {"id": "A", "text": "messages has no reducer, so the returned value overwrites the history instead of appending to it"},
+        {"id": "B", "text": "model.invoke cannot take a list"},
+        {"id": "C", "text": "TypedDict cannot contain a list"},
+        {"id": "D", "text": "A node must return None"}
+      ],
+      "correctAnswer": ["A"],
+      "explanation": "Annotate the key with a reducer, for example messages: Annotated[list, add_messages], or use MessagesState.",
+      "tags": ["Reducers", "Debugging"],
+      "technology": "LangGraph",
+      "apiVersion": "v1"
+    }
+  ]
+}

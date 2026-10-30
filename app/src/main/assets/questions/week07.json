@@ -1,0 +1,4 @@
+{"schemaVersion": 1, "week": 7, "module": "LangGraph", "topics": [
+  {"id": "lg_w07_checkpoint", "name": "Checkpointers", "description": "Saving graph state between steps."},
+  {"id": "lg_w07_memory", "name": "Threads & Memory", "description": "Short-term and long-term memory."}
+], "questions": []}

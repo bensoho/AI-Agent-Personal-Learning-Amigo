@@ -1,0 +1,4 @@
+{"schemaVersion": 1, "week": 8, "module": "LangGraph", "topics": [
+  {"id": "lg_w08_interrupt", "name": "Interrupts", "description": "Pausing a graph for human input."},
+  {"id": "lg_w08_resume", "name": "Resuming Execution", "description": "Continuing from a saved checkpoint."}
+], "questions": []}

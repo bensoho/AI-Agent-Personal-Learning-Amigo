@@ -1,0 +1,4 @@
+{"schemaVersion": 1, "week": 6, "module": "LangGraph", "topics": [
+  {"id": "lg_w06_edges", "name": "Normal Edges", "description": "Fixed transitions between nodes."},
+  {"id": "lg_w06_routing", "name": "Conditional Edges", "description": "Choosing the next node at runtime."}
+], "questions": []}

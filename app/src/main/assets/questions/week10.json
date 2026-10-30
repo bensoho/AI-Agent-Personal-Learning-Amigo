@@ -1,0 +1,4 @@
+{"schemaVersion": 1, "week": 10, "module": "Agent Engineering", "topics": [
+  {"id": "ae_w10_loop", "name": "Agentic RAG Loop", "description": "Letting the agent decide when and what to retrieve."},
+  {"id": "ae_w10_grading", "name": "Retrieval Grading", "description": "Checking relevance and rewriting queries."}
+], "questions": []}

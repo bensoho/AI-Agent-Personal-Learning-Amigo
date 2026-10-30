@@ -1,0 +1,4 @@
+{"schemaVersion": 1, "week": 15, "module": "Production", "topics": [
+  {"id": "pr_w15_deploy", "name": "Deployment", "description": "Packaging and serving an agent."},
+  {"id": "pr_w15_monitor", "name": "Monitoring", "description": "Observability, cost and latency."}
+], "questions": []}

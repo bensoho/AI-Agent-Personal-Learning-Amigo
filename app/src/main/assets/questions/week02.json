@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "week": 2,
+  "module": "LangChain",
+  "topics": [
+    {"id": "lc_w02_prompts", "name": "Prompt Templates", "description": "Reusable prompts with variables."},
+    {"id": "lc_w02_structured", "name": "Structured Output", "description": "Getting schema-conforming results from a model."}
+  ],
+  "questions": [
+    {
+      "id": "lc_w02_prompts_q001",
+      "topicId": "lc_w02_prompts",
+      "type": "CODE_READING",
+      "difficulty": "INTERMEDIATE",
+      "title": "What does prompt.invoke(...) return here?",
+      "codeSnippet": "from langchain_core.prompts import ChatPromptTemplate\n\nprompt = ChatPromptTemplate.from_messages([\n    (\"system\", \"Translate to {lang}.\"),\n    (\"human\", \"{text}\"),\n])\nresult = prompt.invoke({\"lang\": \"French\", \"text\": \"Hi\"})",
+      "options": [
+        {"id": "A", "text": "A ChatPromptValue holding the formatted messages; no model is called"},
+        {"id": "B", "text": "The French translation as a string"},
+        {"id": "C", "text": "An AIMessage"},
+        {"id": "D", "text": "A KeyError because lang is not defined"}
+      ],
+      "correctAnswer": ["A"],
+      "explanation": "A prompt template only formats input into messages. The model is called only when the prompt is piped into a chat model.",
+      "tags": ["ChatPromptTemplate"],
+      "technology": "LangChain",
+      "apiVersion": "v1"
+    },
+    {
+      "id": "lc_w02_structured_q001",
+      "topicId": "lc_w02_structured",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "What is the main purpose of model.with_structured_output(Schema)?",
+      "options": [
+        {"id": "A", "text": "It makes the model respond to every request in JSON text that you parse manually"},
+        {"id": "B", "text": "It returns output that has been parsed and validated into the given schema, such as a Pydantic object"},
+        {"id": "C", "text": "It trains the model on your schema"},
+        {"id": "D", "text": "It caches responses on disk"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "with_structured_output wraps the model so that invoke() returns data matching the schema, removing manual parsing.",
+      "tags": ["Structured Output"],
+      "technology": "LangChain",
+      "apiVersion": "v1"
+    }
+  ]
+}
