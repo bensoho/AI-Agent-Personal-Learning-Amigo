@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.agentlearning.feature.quiz.components.CodeBlock
@@ -47,8 +48,9 @@ private fun parseNotes(notes: String): List<NoteBlock> {
 
 @Composable
 fun NoteContent(notes: String, modifier: Modifier = Modifier) {
+    val blocks = remember(notes) { parseNotes(notes) }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        parseNotes(notes).forEach { block ->
+        blocks.forEach { block ->
             when (block) {
                 is NoteBlock.Heading -> Text(
                     block.text,

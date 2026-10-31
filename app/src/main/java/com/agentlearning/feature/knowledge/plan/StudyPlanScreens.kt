@@ -23,8 +23,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -42,6 +42,7 @@ fun StudyPlanList(
     onDocumentClick: (String) -> Unit,
     viewModel: StudyPlanViewModel = hiltViewModel(),
 ) {
+    LaunchedEffect(query) { viewModel.setQuery(query) }
     val state by viewModel.state.collectAsStateWithLifecycle()
     when (val s = state) {
         PlanLoadState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -49,11 +50,10 @@ fun StudyPlanList(
         }
         is PlanLoadState.Error -> EmptyHint(s.message)
         is PlanLoadState.Ready -> {
-            val plan = remember(s.value, query) { s.value.filter(query) }
-            if (plan.months.isEmpty() && plan.guides.isEmpty()) {
+            if (s.value.months.isEmpty() && s.value.guides.isEmpty()) {
                 EmptyHint(if (query.isBlank()) "暂无学习计划" else "没有匹配的学习内容")
             } else {
-                StudyPlanContent(plan, onDocumentClick)
+                StudyPlanContent(s.value, onDocumentClick)
             }
         }
     }

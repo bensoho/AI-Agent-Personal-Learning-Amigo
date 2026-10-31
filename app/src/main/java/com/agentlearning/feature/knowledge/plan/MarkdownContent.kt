@@ -123,14 +123,18 @@ private fun TableRow(cells: List<String>, columns: Int, style: TextStyle, backgr
     }
 }
 
-private fun inlineText(text: String, codeBackground: Color): AnnotatedString = buildAnnotatedString {
-    MarkdownParser.spans(text).forEach { span ->
-        when (span) {
-            is MdSpan.Plain -> append(span.text)
-            is MdSpan.Bold -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(span.text) }
-            is MdSpan.InlineCode -> withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = codeBackground)) {
-                append(span.text)
+@Composable
+private fun inlineText(text: String, codeBackground: Color): AnnotatedString =
+    remember(text, codeBackground) {
+        buildAnnotatedString {
+            MarkdownParser.spans(text).forEach { span ->
+                when (span) {
+                    is MdSpan.Plain -> append(span.text)
+                    is MdSpan.Bold -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(span.text) }
+                    is MdSpan.InlineCode -> withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = codeBackground)) {
+                        append(span.text)
+                    }
+                }
             }
         }
     }
-}

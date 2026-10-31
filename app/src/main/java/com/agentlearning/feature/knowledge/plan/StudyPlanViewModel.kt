@@ -4,9 +4,14 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -21,14 +26,32 @@ class StudyPlanViewModel @Inject constructor(
     private val repository: StudyPlanRepository,
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow<PlanLoadState<StudyPlan>>(PlanLoadState.Loading)
-    val state: StateFlow<PlanLoadState<StudyPlan>> = _state.asStateFlow()
+    private val query = MutableStateFlow("")
+    private val plan = MutableStateFlow<StudyPlan?>(null)
+    private val error = MutableStateFlow<String?>(null)
+
+    // Scanning the whole plan markdown per query is kept off the main thread.
+    val state: StateFlow<PlanLoadState<StudyPlan>> =
+        combine(plan, error, query) { plan, error, query ->
+            when {
+                plan != null -> PlanLoadState.Ready(plan.filter(query))
+                error != null -> PlanLoadState.Error(error)
+                else -> PlanLoadState.Loading
+            }
+        }
+            .flowOn(Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlanLoadState.Loading)
 
     init {
         viewModelScope.launch {
-            _state.value = runCatching { repository.load() }
-                .fold({ PlanLoadState.Ready(it) }, { PlanLoadState.Error(it.message ?: "学习计划加载失败") })
+            runCatching { repository.load() }
+                .onSuccess { plan.value = it }
+                .onFailure { error.value = it.message ?: "学习计划加载失败" }
         }
+    }
+
+    fun setQuery(value: String) {
+        query.value = value.trim()
     }
 }
 

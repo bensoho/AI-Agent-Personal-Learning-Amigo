@@ -53,6 +53,7 @@ fun KnowledgeScreen(
 ) {
     val courses by viewModel.courses.collectAsStateWithLifecycle()
     val query by viewModel.query.collectAsStateWithLifecycle()
+    val filterQuery by viewModel.filterQuery.collectAsStateWithLifecycle()
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -86,9 +87,9 @@ fun KnowledgeScreen(
         }
 
         if (selectedTab == 1) {
-            StudyPlanList(query = query, onDocumentClick = onPlanDocumentClick)
+            StudyPlanList(query = filterQuery, onDocumentClick = onPlanDocumentClick)
         } else {
-            TopicList(courses = courses, query = query, onTopicClick = onTopicClick)
+            TopicList(courses = courses, query = filterQuery, onTopicClick = onTopicClick)
         }
     }
 }
