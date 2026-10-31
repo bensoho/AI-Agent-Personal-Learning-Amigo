@@ -22,27 +22,38 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.agentlearning.domain.model.CourseOutline
 import com.agentlearning.feature.curriculum.TopicDetailViewModel
+import com.agentlearning.feature.knowledge.plan.StudyPlanList
 import com.agentlearning.ui.components.AppCard
 import com.agentlearning.ui.components.EmptyHint
 import com.agentlearning.ui.components.Pill
 
+private val knowledgeTabs = listOf("题库知识点", "学习计划")
+
 @Composable
 fun KnowledgeScreen(
     onTopicClick: (String) -> Unit,
+    onPlanDocumentClick: (String) -> Unit,
     viewModel: KnowledgeViewModel = hiltViewModel(),
 ) {
     val courses by viewModel.courses.collectAsStateWithLifecycle()
     val query by viewModel.query.collectAsStateWithLifecycle()
+    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -52,7 +63,7 @@ fun KnowledgeScreen(
                 onValueChange = viewModel::setQuery,
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                placeholder = { Text("搜索知识点或关键词") },
+                placeholder = { Text(if (selectedTab == 0) "搜索知识点或关键词" else "搜索学习计划内容") },
                 leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
                 trailingIcon = {
                     if (query.isNotEmpty()) {
@@ -63,56 +74,78 @@ fun KnowledgeScreen(
                 },
                 shape = MaterialTheme.shapes.large,
             )
+            TabRow(selectedTabIndex = selectedTab) {
+                knowledgeTabs.forEachIndexed { index, label ->
+                    Tab(
+                        selected = selectedTab == index,
+                        onClick = { selectedTab = index },
+                        text = { Text(label) },
+                    )
+                }
+            }
         }
 
-        if (courses.isEmpty()) {
-            EmptyHint(if (query.isBlank()) "暂无知识点" else "没有匹配的知识点")
+        if (selectedTab == 1) {
+            StudyPlanList(query = query, onDocumentClick = onPlanDocumentClick)
         } else {
-            LazyColumn(
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                courses.forEach { course ->
-                    item(key = "course-${course.course.id}") {
+            TopicList(courses = courses, query = query, onTopicClick = onTopicClick)
+        }
+    }
+}
+
+@Composable
+private fun TopicList(
+    courses: List<CourseOutline>,
+    query: String,
+    onTopicClick: (String) -> Unit,
+) {
+    if (courses.isEmpty()) {
+        EmptyHint(if (query.isBlank()) "暂无知识点" else "没有匹配的知识点")
+    } else {
+        LazyColumn(
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            courses.forEach { course ->
+                item(key = "course-${course.course.id}") {
+                    Text(
+                        "Month ${course.course.monthNumber} · ${course.course.title}",
+                        style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+                course.weeks.forEach { week ->
+                    item(key = "week-${week.weekNumber}") {
                         Text(
-                            "Month ${course.course.monthNumber} · ${course.course.title}",
-                            style = MaterialTheme.typography.titleLarge,
-                            modifier = Modifier.padding(top = 8.dp),
+                            "Week %02d  %s".format(week.weekNumber, week.title),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp),
                         )
                     }
-                    course.weeks.forEach { week ->
-                        item(key = "week-${week.weekNumber}") {
-                            Text(
-                                "Week %02d  %s".format(week.weekNumber, week.title),
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(top = 4.dp),
-                            )
-                        }
-                        week.topics.forEach { progress ->
-                            val topic = progress.topic
-                            item(key = "topic-${topic.id}") {
-                                AppCard(Modifier.fillMaxWidth(), onClick = { onTopicClick(topic.id) }) {
-                                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        Row(
-                                            Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically,
-                                        ) {
-                                            Text(topic.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                                            if (topic.notes != null) {
-                                                Pill("笔记")
-                                            } else {
-                                                Pill(
-                                                    "整理中",
-                                                    container = MaterialTheme.colorScheme.surfaceVariant,
-                                                    content = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                )
-                                            }
+                    week.topics.forEach { progress ->
+                        val topic = progress.topic
+                        item(key = "topic-${topic.id}") {
+                            AppCard(Modifier.fillMaxWidth(), onClick = { onTopicClick(topic.id) }) {
+                                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Row(
+                                        Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(topic.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                                        if (topic.notes != null) {
+                                            Pill("笔记")
+                                        } else {
+                                            Pill(
+                                                "整理中",
+                                                container = MaterialTheme.colorScheme.surfaceVariant,
+                                                content = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
                                         }
-                                        topic.description?.let {
-                                            Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        }
+                                    }
+                                    topic.description?.let {
+                                        Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                 }
                             }

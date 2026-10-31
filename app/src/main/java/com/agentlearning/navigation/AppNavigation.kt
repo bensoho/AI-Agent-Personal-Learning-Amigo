@@ -42,6 +42,7 @@ import com.agentlearning.feature.curriculum.TopicDetailScreen
 import com.agentlearning.feature.home.HomeScreen
 import com.agentlearning.feature.knowledge.KnowledgeDetailScreen
 import com.agentlearning.feature.knowledge.KnowledgeScreen
+import com.agentlearning.feature.knowledge.plan.StudyPlanDetailScreen
 import com.agentlearning.feature.quiz.QuizScreen
 import com.agentlearning.feature.review.ReviewScreen
 import com.agentlearning.feature.settings.SettingsScreen
@@ -56,11 +57,14 @@ object Routes {
     const val SETTINGS = "settings"
     const val TOPIC = "topic/{topicId}"
     const val KNOWLEDGE_DETAIL = "knowledge/{topicId}"
+    const val PLAN_DETAIL = "plan/{documentId}"
     const val QUIZ = "quiz/{mode}?topicId={topicId}"
 
     fun topic(topicId: String) = "topic/$topicId"
 
     fun knowledgeDetail(topicId: String) = "knowledge/$topicId"
+
+    fun planDetail(documentId: String) = "plan/$documentId"
 
     fun quiz(mode: StudyMode, topicId: String? = null) =
         "quiz/${mode.name}" + (topicId?.let { "?topicId=$it" } ?: "")
@@ -141,7 +145,16 @@ private fun AppScaffold() {
                 CurriculumScreen(onTopicClick = { navController.navigate(Routes.topic(it)) })
             }
             composable(Routes.KNOWLEDGE) {
-                KnowledgeScreen(onTopicClick = { navController.navigate(Routes.knowledgeDetail(it)) })
+                KnowledgeScreen(
+                    onTopicClick = { navController.navigate(Routes.knowledgeDetail(it)) },
+                    onPlanDocumentClick = { navController.navigate(Routes.planDetail(it)) },
+                )
+            }
+            composable(
+                Routes.PLAN_DETAIL,
+                arguments = listOf(navArgument("documentId") { type = NavType.StringType }),
+            ) {
+                StudyPlanDetailScreen(onBack = { navController.popBackStack() })
             }
             composable(Routes.REVIEW) {
                 ReviewScreen(onStartQuiz = { navController.navigate(Routes.quiz(it)) })
