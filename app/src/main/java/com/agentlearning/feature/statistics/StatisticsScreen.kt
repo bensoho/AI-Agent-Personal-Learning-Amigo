@@ -1,28 +1,23 @@
 package com.agentlearning.feature.statistics
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.agentlearning.domain.model.DailyStat
 import com.agentlearning.ui.components.AppCard
+import com.agentlearning.ui.components.DailyBars
 import com.agentlearning.ui.components.SectionTitle
 import com.agentlearning.ui.components.StatCard
 import com.agentlearning.ui.components.asPercent
@@ -79,29 +74,6 @@ fun StatisticsScreen(viewModel: StatisticsViewModel = hiltViewModel()) {
                     Text("掌握度 ${course.mastery.asPercent()}")
                     LinearProgressIndicator(progress = { course.mastery }, modifier = Modifier.fillMaxWidth())
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun DailyBars(daily: List<DailyStat>) {
-    val max = (daily.maxOfOrNull { it.total } ?: 0).coerceAtLeast(1)
-    Row(
-        Modifier.fillMaxWidth().height(140.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.Bottom,
-    ) {
-        daily.forEach { day ->
-            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Bottom) {
-                Text("${day.total}", style = MaterialTheme.typography.labelSmall)
-                Box(
-                    Modifier
-                        .width(24.dp)
-                        .height((90 * day.total / max).dp.coerceAtLeast(2.dp))
-                        .background(MaterialTheme.colorScheme.primary)
-                )
-                Text("${day.date.monthValue}/${day.date.dayOfMonth}", style = MaterialTheme.typography.labelSmall)
             }
         }
     }

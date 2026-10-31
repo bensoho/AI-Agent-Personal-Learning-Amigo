@@ -1,12 +1,17 @@
 package com.agentlearning.ui.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -17,7 +22,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.agentlearning.domain.model.DailyStat
 import com.agentlearning.domain.model.Difficulty
 import com.agentlearning.domain.model.QuestionType
 
@@ -68,6 +75,34 @@ fun SectionTitle(text: String, modifier: Modifier = Modifier) {
 fun EmptyHint(text: String, modifier: Modifier = Modifier) {
     Box(modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
         Text(text, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+@Composable
+fun DailyBars(
+    daily: List<DailyStat>,
+    modifier: Modifier = Modifier,
+    height: Dp = 140.dp,
+    barMaxHeight: Dp = 90.dp,
+) {
+    val max = (daily.maxOfOrNull { it.total } ?: 0).coerceAtLeast(1)
+    Row(
+        modifier.fillMaxWidth().height(height),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        daily.forEach { day ->
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Bottom) {
+                Text("${day.total}", style = MaterialTheme.typography.labelSmall)
+                Box(
+                    Modifier
+                        .width(24.dp)
+                        .height((barMaxHeight * (day.total.toFloat() / max)).coerceAtLeast(2.dp))
+                        .background(MaterialTheme.colorScheme.primary)
+                )
+                Text("${day.date.monthValue}/${day.date.dayOfMonth}", style = MaterialTheme.typography.labelSmall)
+            }
+        }
     }
 }
 
