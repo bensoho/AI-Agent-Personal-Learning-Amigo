@@ -3,9 +3,12 @@ package com.agentlearning.ui.components
 import android.content.ActivityNotFoundException
 import android.content.ClipboardManager
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
+import android.net.Uri
 import android.os.Build
+import android.util.Log
 import android.view.ActionMode
 import android.view.Menu
 import android.view.MenuItem
@@ -28,9 +31,9 @@ fun ProvideProcessTextToolbar(content: @Composable () -> Unit) {
 }
 
 /**
- * Floating text toolbar with copy / paste / cut / select all plus every installed ACTION_PROCESS_TEXT
- * handler (Google Translate, vendor translators, ...), like a platform TextView offers.
- * Compose's own toolbar does not include those actions.
+ * Floating text toolbar with copy / paste / cut / select all plus the installed ACTION_PROCESS_TEXT
+ * handlers (the phone's translator, ...), like a platform TextView offers; duplicate translators
+ * from browsers and Google Translate are hidden. Compose's own toolbar does not include these actions.
  */
 private class ProcessTextToolbar(private val view: View) : TextToolbar {
 
@@ -134,16 +137,44 @@ private class ProcessTextToolbar(private val view: View) : TextToolbar {
     private fun queryProcessTextActivities(): List<ResolveInfo> {
         val pm = view.context.packageManager
         val intent = Intent(Intent.ACTION_PROCESS_TEXT).setType(MIME_TEXT)
-        val found = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            pm.queryIntentActivities(intent, PackageManager.ResolveInfoFlags.of(0))
-        } else {
-            @Suppress("DEPRECATION")
-            pm.queryIntentActivities(intent, 0)
-        }
+        val found = queryActivities(intent, 0)
+        val browsers = browserPackages()
         return found
             .filter { it.activityInfo.exported && it.activityInfo.permission == null }
+            .map { it to it.loadLabel(pm).toString() }
+            .onEach { (info, label) -> logHandler(info, label) }
+            // Keep only the phone's built-in translator: a browser's "翻译" just opens a web page and
+            // Google Translate duplicates it. Non-translation actions are left untouched.
+            .filterNot { (info, label) ->
+                isTranslator(label) && (info.activityInfo.packageName in browsers || info.activityInfo.packageName == GOOGLE_TRANSLATE)
+            }
             // Translators first, since that is the action this toolbar is mostly used for.
-            .sortedByDescending { isTranslator(it.loadLabel(pm).toString()) }
+            .sortedByDescending { (_, label) -> isTranslator(label) }
+            .map { (info, _) -> info }
+    }
+
+    /** Packages that handle arbitrary web links, i.e. browsers. */
+    private fun browserPackages(): Set<String> {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.example.com"))
+            .addCategory(Intent.CATEGORY_BROWSABLE)
+        return queryActivities(intent, PackageManager.MATCH_ALL).map { it.activityInfo.packageName }.toSet()
+    }
+
+    private fun queryActivities(intent: Intent, flags: Int): List<ResolveInfo> {
+        val pm = view.context.packageManager
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            pm.queryIntentActivities(intent, PackageManager.ResolveInfoFlags.of(flags.toLong()))
+        } else {
+            @Suppress("DEPRECATION")
+            pm.queryIntentActivities(intent, flags)
+        }
+    }
+
+    // Debug builds log every handler so unwanted entries on a new phone can be identified in logcat.
+    private fun logHandler(info: ResolveInfo, label: String) {
+        if ((view.context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            Log.d(TAG, "PROCESS_TEXT handler: label=$label, activity=${info.activityInfo.packageName}/${info.activityInfo.name}")
+        }
     }
 
     /**
@@ -180,6 +211,8 @@ private class ProcessTextToolbar(private val view: View) : TextToolbar {
         label.contains("翻译") || label.contains("翻譯") || label.contains("translat", ignoreCase = true)
 
     private companion object {
+        const val TAG = "ProcessTextToolbar"
+        const val GOOGLE_TRANSLATE = "com.google.android.apps.translate"
         const val MIME_TEXT = "text/plain"
         const val ID_COPY = 1
         const val ID_PASTE = 2
