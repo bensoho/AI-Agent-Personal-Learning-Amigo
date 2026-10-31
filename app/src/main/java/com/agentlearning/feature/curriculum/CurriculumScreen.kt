@@ -55,6 +55,7 @@ fun CurriculumScreen(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        item { Text("课程", style = MaterialTheme.typography.headlineMedium) }
         outline.forEach { course ->
             item(key = "course-${course.course.id}") {
                 Text(

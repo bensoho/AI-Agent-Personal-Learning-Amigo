@@ -29,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.agentlearning.ui.components.AppCard
@@ -80,7 +81,7 @@ private fun StudyPlanContent(plan: StudyPlan, listState: LazyListState, onDocume
         plan.months.forEach { month ->
             item(key = "month-${month.number}") {
                 Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("Month ${month.number} · ${month.title}", style = MaterialTheme.typography.titleLarge)
+                    Text("Month ${month.number} · ${month.title}", style = MaterialTheme.typography.titleMedium)
                     month.goal?.let {
                         Text(
                             "月度目标：$it",
@@ -115,13 +116,17 @@ private fun PlanCard(title: String, subtitle: String, pill: String?, onClick: ()
                 pill?.let { Pill(it) }
                 Text(
                     title,
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.titleSmall,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
             }
-            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp, lineHeight = 17.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

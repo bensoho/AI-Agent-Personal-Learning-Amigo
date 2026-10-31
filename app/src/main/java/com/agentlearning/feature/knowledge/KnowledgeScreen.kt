@@ -223,7 +223,7 @@ private fun TopicList(
                 item(key = "course-${course.course.id}") {
                     Text(
                         "Month ${course.course.monthNumber} · ${course.course.title}",
-                        style = MaterialTheme.typography.titleLarge,
+                        style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.padding(top = 8.dp),
                     )
                 }
