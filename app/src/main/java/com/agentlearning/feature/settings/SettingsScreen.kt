@@ -21,6 +21,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -41,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.agentlearning.data.repository.SettingsRepositoryImpl
+import com.agentlearning.domain.model.ThemeMode
 import com.agentlearning.ui.components.AppCard
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -59,6 +63,12 @@ private fun SettingsCard(title: String, content: @Composable ColumnScope.() -> U
 
 private const val GOAL_STEP = 5
 private const val AUTHOR_EMAIL = "bensoho.liu@gmail.com"
+
+private val themeOptions = listOf(
+    ThemeMode.SYSTEM to "跟随系统",
+    ThemeMode.LIGHT to "浅色",
+    ThemeMode.DARK to "深色",
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -95,6 +105,18 @@ fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewMo
             Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            SettingsCard("主题") {
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    themeOptions.forEachIndexed { index, (mode, label) ->
+                        SegmentedButton(
+                            selected = state.themeMode == mode,
+                            onClick = { viewModel.setThemeMode(mode) },
+                            shape = SegmentedButtonDefaults.itemShape(index = index, count = themeOptions.size),
+                        ) { Text(label) }
+                    }
+                }
+            }
+
             SettingsCard("字体大小") {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("小", style = MaterialTheme.typography.labelMedium)

@@ -81,6 +81,11 @@ data class ReviewState(
 
 enum class StudyMode { TOPIC, DAILY, REVIEW_DUE, REVIEW_RECENT_WRONG, REVIEW_REPEATED_WRONG, REVIEW_MASTERED }
 
+enum class ThemeMode { SYSTEM, LIGHT, DARK }
+
+/** Maximum number of questions in one review-mode quiz. */
+const val REVIEW_SESSION_LIMIT = 20
+
 enum class ReviewFilter(val label: String, val mode: StudyMode) {
     DUE("今日待复习", StudyMode.REVIEW_DUE),
     RECENT_WRONG("最近答错", StudyMode.REVIEW_RECENT_WRONG),

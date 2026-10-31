@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.agentlearning.domain.model.REVIEW_SESSION_LIMIT
 import com.agentlearning.domain.model.ReviewFilter
 import com.agentlearning.domain.model.StudyMode
 import com.agentlearning.ui.components.AppCard
@@ -98,7 +99,7 @@ fun ReviewScreen(
             enabled = questions.isNotEmpty(),
             modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
         ) {
-            Text("开始练习（${questions.size} 题）")
+            Text("开始练习（${minOf(questions.size, REVIEW_SESSION_LIMIT)} 题）")
         }
     }
 }

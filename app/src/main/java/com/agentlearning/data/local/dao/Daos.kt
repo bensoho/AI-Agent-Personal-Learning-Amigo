@@ -61,6 +61,9 @@ interface QuestionDao {
     @Query("SELECT id FROM questions")
     suspend fun getAllIds(): List<String>
 
+    @Query("SELECT * FROM questions WHERE id IN (:ids)")
+    suspend fun getByIds(ids: List<String>): List<QuestionEntity>
+
     @Query("SELECT * FROM questions WHERE topicId = :topicId AND isActive = 1 ORDER BY id")
     fun observeByTopic(topicId: String): Flow<List<QuestionEntity>>
 

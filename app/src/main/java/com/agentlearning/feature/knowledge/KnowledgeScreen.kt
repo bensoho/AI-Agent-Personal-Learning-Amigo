@@ -79,7 +79,10 @@ fun KnowledgeScreen(
     var searchVisible by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(query) { if (query.isNotEmpty()) searchVisible = true }
 
-    val listState = rememberLazyListState()
+    // Each tab keeps its own scroll position.
+    val topicListState = rememberLazyListState()
+    val planListState = rememberLazyListState()
+    val listState = if (selectedTab == 0) topicListState else planListState
     val latestQuery by rememberUpdatedState(query)
     val revealThreshold = with(LocalDensity.current) { 56.dp.toPx() }
     val pullToReveal = Modifier.pointerInput(listState, revealThreshold) {
@@ -292,20 +295,24 @@ fun KnowledgeDetailScreen(
             )
         },
     ) { padding ->
-        SelectionContainer {
         Column(
             Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            topic?.let {
-                Pill("Week %02d · %s".format(it.weekNumber, it.weekTitle))
-                it.description?.let { text ->
-                    Text(text, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                if (it.notes != null) {
-                    NoteContent(it.notes)
-                } else {
-                    Text("该知识点的笔记整理中。", style = MaterialTheme.typography.bodyMedium)
+            // Only text is selectable, so long-pressing the button never starts a text selection.
+            SelectionContainer {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    topic?.let {
+                        Pill("Week %02d · %s".format(it.weekNumber, it.weekTitle))
+                        it.description?.let { text ->
+                            Text(text, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (it.notes != null) {
+                            NoteContent(it.notes)
+                        } else {
+                            Text("该知识点的笔记整理中。", style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
                 }
             }
             if (state.questions.isNotEmpty()) {
@@ -313,7 +320,6 @@ fun KnowledgeDetailScreen(
                     Text("练习本知识点（${state.questions.size} 题）")
                 }
             }
-        }
         }
     }
 }

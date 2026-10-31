@@ -7,6 +7,7 @@ import com.agentlearning.domain.model.Question
 import com.agentlearning.domain.model.ReviewFilter
 import com.agentlearning.domain.model.StatsSummary
 import com.agentlearning.domain.model.StudyMode
+import com.agentlearning.domain.model.ThemeMode
 import com.agentlearning.domain.model.Topic
 import com.agentlearning.domain.model.WeeklyStat
 import kotlinx.coroutines.flow.Flow
@@ -20,6 +21,9 @@ interface CurriculumRepository {
 interface StudyRepository {
     fun observeQuestions(filter: ReviewFilter): Flow<List<Question>>
     suspend fun loadQuizQuestions(mode: StudyMode, topicId: String?, dailyGoal: Int): List<Question>
+
+    /** Loads questions by id, keeping the order of [ids]; used to restore a quiz after process death. */
+    suspend fun loadQuestionsByIds(ids: List<String>): List<Question>
     suspend fun startSession(mode: StudyMode): Long
     suspend fun finishSession(sessionId: Long)
 
@@ -45,10 +49,12 @@ interface SettingsRepository {
     val bankContentVersion: Flow<Int>
     val fontScale: Flow<Float>
     val soundEnabled: Flow<Boolean>
+    val themeMode: Flow<ThemeMode>
     suspend fun setDailyGoal(value: Int)
     suspend fun setBankContentVersion(value: Int)
     suspend fun setFontScale(value: Float)
     suspend fun setSoundEnabled(value: Boolean)
+    suspend fun setThemeMode(value: ThemeMode)
 }
 
 class BackupException(message: String) : Exception(message)

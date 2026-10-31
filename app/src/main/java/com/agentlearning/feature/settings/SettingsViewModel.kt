@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.agentlearning.domain.model.BackupPreview
+import com.agentlearning.domain.model.ThemeMode
 import com.agentlearning.domain.repository.BackupException
 import com.agentlearning.domain.repository.BackupRepository
 import com.agentlearning.domain.repository.ParsedBackup
@@ -28,6 +29,7 @@ data class SettingsUiState(
     val bankVersion: Int = 0,
     val fontScale: Float = 1f,
     val soundEnabled: Boolean = true,
+    val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val message: String? = null,
     val pendingRestore: BackupPreview? = null,
 )
@@ -43,14 +45,23 @@ class SettingsViewModel @Inject constructor(
     private var pending: ParsedBackup? = null
 
     val uiState: StateFlow<SettingsUiState> = combine(
-        settings.dailyGoal,
-        settings.bankContentVersion,
-        settings.fontScale,
-        settings.soundEnabled,
+        combine(
+            settings.dailyGoal,
+            settings.bankContentVersion,
+            settings.fontScale,
+            settings.soundEnabled,
+            settings.themeMode,
+        ) { goal, version, fontScale, sound, theme ->
+            SettingsUiState(goal, version, fontScale, sound, theme)
+        },
         transient,
-    ) { goal, version, fontScale, sound, t ->
-        SettingsUiState(goal, version, fontScale, sound, t.message, t.preview)
+    ) { prefs, t ->
+        prefs.copy(message = t.message, pendingRestore = t.preview)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
+
+    fun setThemeMode(value: ThemeMode) {
+        viewModelScope.launch { settings.setThemeMode(value) }
+    }
 
     fun setDailyGoal(value: Int) {
         viewModelScope.launch { settings.setDailyGoal(value) }

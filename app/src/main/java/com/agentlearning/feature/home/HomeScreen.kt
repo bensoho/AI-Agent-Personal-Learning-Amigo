@@ -36,6 +36,7 @@ import com.agentlearning.ui.components.DailyBars
 import com.agentlearning.ui.components.SectionTitle
 import com.agentlearning.ui.components.StatCard
 import com.agentlearning.ui.components.asPercent
+import com.agentlearning.ui.theme.LocalDarkTheme
 
 @Composable
 fun HomeScreen(
@@ -75,8 +76,14 @@ fun HomeScreen(
             item {
                 val today = summary?.todayAnswers ?: 0
                 val progress = (today.toFloat() / state.dailyGoal).coerceIn(0f, 1f)
+                // Dark scheme primaries are light tints; use the deep containers there so white text stays readable.
+                val darkTheme = LocalDarkTheme.current
                 val gradient = Brush.linearGradient(
-                    listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary)
+                    if (darkTheme) {
+                        listOf(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.secondaryContainer)
+                    } else {
+                        listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary)
+                    }
                 )
                 Box(
                     Modifier
