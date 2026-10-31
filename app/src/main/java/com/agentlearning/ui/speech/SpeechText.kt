@@ -5,6 +5,14 @@ internal const val SPEECH_CHUNK_LENGTH = 60
 private val SENTENCE_END = charArrayOf('。', '！', '？', '!', '?', '；', ';', '…', '\n')
 private val CLAUSE_BREAK = charArrayOf('，', ',', '、', '：', ':', ' ')
 
+/**
+ * Drops Chinese/English punctuation, but keeps mathematical operators and
+ * currency signs because those should be read aloud.
+ */
+private val UNSPEAKABLE_SYMBOLS = Regex(
+    """[^\p{L}\p{N}\s\p{Sc}。！？!?；;…，,、：:.%％‰+=<>＋＝＜＞≤≥≠≈±×÷√∑∞−∓≡∝∫∆∇]+""",
+)
+
 internal fun textForSpeech(markdown: String): String =
     markdown
         .replace(Regex("""(?s)```.*?```"""), " ")
@@ -13,6 +21,9 @@ internal fun textForSpeech(markdown: String): String =
         .replace(Regex("""(?m)^[ \t]{0,3}#{1,6}[ \t]+"""), "")
         .replace(Regex("""(?m)^[ \t]*>[ \t]?"""), "")
         .replace(Regex("""(?m)^[ \t]*(?:[-+*]|\d+[.)])[ \t]+"""), "")
+        .replace(Regex("""(?<=\d)\s*\*\s*(?=\d)"""), "×")
+        .replace(Regex("""(?<=\d)\s*/\s*(?=\d)"""), "÷")
+        .replace(Regex("""(?<=\d)\s*-\s*(?=\d)"""), "−")
         .replace(Regex("""[*_`]"""), " ")
         .replace("|", " ")
         .replace("&", " 和 ")
@@ -26,6 +37,9 @@ internal fun textForSpeech(markdown: String): String =
         .replace("]", " ")
         .replace("【", " ")
         .replace("】", " ")
+        .replace(Regex("""['’‘]"""), "")
+        .replace(UNSPEAKABLE_SYMBOLS, " ")
+        .replace(Regex("""[ \t]+([。！？!?；;…，,、：:.])"""), "$1")
         .replace(Regex("""[^\S\n]+"""), " ")
         .replace(Regex(""" *\n *"""), "\n")
         .replace(Regex("""\n{2,}"""), "\n")

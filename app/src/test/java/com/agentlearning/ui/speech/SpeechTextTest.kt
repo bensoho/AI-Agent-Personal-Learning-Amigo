@@ -43,6 +43,38 @@ class SpeechTextTest {
     }
 
     @Test
+    fun dropsPunctuationAndSymbolsThatTheVoiceWouldReadOut() {
+        assertEquals(
+            "模型 输入 输出 结果 完成",
+            textForSpeech("模型 → 输入 — 输出 - 结果 ⇒ 完成"),
+        )
+        assertEquals(
+            "使用 GPT 4 模型",
+            textForSpeech("使用 GPT-4 模型"),
+        )
+    }
+
+    @Test
+    fun keepsPercentAndMathOperatorsButDropsPunctuation() {
+        assertEquals(
+            "3 + 5 = 8",
+            textForSpeech("3 + 5 = 8"),
+        )
+        assertEquals(
+            "准确率 95%，误差 ≤ 3",
+            textForSpeech("准确率 ~95%，误差 ≤ 3"),
+        )
+        assertEquals(
+            "成本 ¥100，收益率 5‰",
+            textForSpeech("成本「¥100」，收益率 5‰"),
+        )
+        assertEquals(
+            "10−3 = 7，6×7 = 42，8÷2 = 4",
+            textForSpeech("10 - 3 = 7，6 * 7 = 42，8 / 2 = 4"),
+        )
+    }
+
+    @Test
     fun keepsSentencesApartSoPlaybackCanStartEarly() {
         val chunks = speechChunks("第一句。第二句！第三句", maxLength = 4)
 
