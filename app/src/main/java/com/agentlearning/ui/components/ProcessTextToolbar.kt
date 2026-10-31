@@ -33,7 +33,7 @@ fun ProvideProcessTextToolbar(content: @Composable () -> Unit) {
 /**
  * Floating text toolbar with copy / paste / cut / select all plus the installed ACTION_PROCESS_TEXT
  * handlers (the phone's translator, ...), like a platform TextView offers; duplicate translators
- * from browsers and Google Translate are hidden. Compose's own toolbar does not include these actions.
+ * (browsers, Google Translate, "系统翻译") are hidden. Compose's own toolbar does not include these actions.
  */
 private class ProcessTextToolbar(private val view: View) : TextToolbar {
 
@@ -143,10 +143,14 @@ private class ProcessTextToolbar(private val view: View) : TextToolbar {
             .filter { it.activityInfo.exported && it.activityInfo.permission == null }
             .map { it to it.loadLabel(pm).toString() }
             .onEach { (info, label) -> logHandler(info, label) }
-            // Keep only the phone's built-in translator: a browser's "翻译" just opens a web page and
-            // Google Translate duplicates it. Non-translation actions are left untouched.
+            // Keep only one translator: a browser's "翻译" just opens a web page, while Google Translate and
+            // the vendor's "系统翻译" duplicate the built-in one. Non-translation actions are left untouched.
             .filterNot { (info, label) ->
-                isTranslator(label) && (info.activityInfo.packageName in browsers || info.activityInfo.packageName == GOOGLE_TRANSLATE)
+                isTranslator(label) && (
+                    info.activityInfo.packageName in browsers ||
+                        info.activityInfo.packageName == GOOGLE_TRANSLATE ||
+                        label.trim() in HIDDEN_TRANSLATOR_LABELS
+                    )
             }
             // Translators first, since that is the action this toolbar is mostly used for.
             .sortedByDescending { (_, label) -> isTranslator(label) }
@@ -213,6 +217,7 @@ private class ProcessTextToolbar(private val view: View) : TextToolbar {
     private companion object {
         const val TAG = "ProcessTextToolbar"
         const val GOOGLE_TRANSLATE = "com.google.android.apps.translate"
+        val HIDDEN_TRANSLATOR_LABELS = setOf("系统翻译", "系統翻譯")
         const val MIME_TEXT = "text/plain"
         const val ID_COPY = 1
         const val ID_PASTE = 2
