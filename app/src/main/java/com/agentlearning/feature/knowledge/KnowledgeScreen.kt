@@ -62,6 +62,7 @@ import com.agentlearning.feature.knowledge.plan.StudyPlanList
 import com.agentlearning.ui.components.AppCard
 import com.agentlearning.ui.components.EmptyHint
 import com.agentlearning.ui.components.Pill
+import com.agentlearning.ui.components.SpeechActionIcon
 
 private val knowledgeTabs = listOf("题库知识点", "学习计划")
 
@@ -290,6 +291,17 @@ fun KnowledgeDetailScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                },
+                actions = {
+                    topic?.let {
+                        SpeechActionIcon(
+                            buildString {
+                                append(it.title)
+                                it.description?.let { description -> append("\n").append(description) }
+                                it.notes?.let { notes -> append("\n").append(notes) }
+                            },
+                        )
                     }
                 },
             )

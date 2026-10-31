@@ -34,8 +34,19 @@
 - Kotlin 2.0、Jetpack Compose（Material 3）、Navigation Compose
 - Hilt 依赖注入、Room（SQLite）、DataStore
 - kotlinx.serialization（题库 JSON）、Coroutines / Flow
+- 系统 TTS（Android TextToSpeech，使用手机内置语音引擎）朗读
 - 单元测试：JUnit 4、kotlinx-coroutines-test、Turbine
 - minSdk 26 / targetSdk 34，JDK 17
+
+### 语音朗读
+
+知识点和学习计划详情页的朗读按钮通过 Android `TextToSpeech` 调用手机当前的
+**系统默认语音引擎**（例如 vivo 的 AIService TTS、Google TTS）。当系统默认引擎
+发生变化时，App 会在下次朗读前自动重新绑定，无需重启。
+
+朗读时：**短按暂停/继续**（从暂停处接着读，不会重头开始），**长按停止**（下次从头朗读）。
+实现方式是把每个句子合成为临时音频文件后用 `MediaPlayer` 播放，因为系统 TTS
+本身不支持原位暂停。
 
 ## 项目结构
 

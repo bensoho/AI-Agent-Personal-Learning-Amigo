@@ -35,6 +35,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.agentlearning.ui.components.AppCard
 import com.agentlearning.ui.components.EmptyHint
 import com.agentlearning.ui.components.Pill
+import com.agentlearning.ui.components.SpeechActionIcon
 
 /** Content of the "学习计划" tab: the bundled plan grouped by month and week. */
 @Composable
@@ -154,6 +155,11 @@ fun StudyPlanDetailScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                },
+                actions = {
+                    document?.let {
+                        SpeechActionIcon("${it.title}\n${it.subtitle}\n${it.markdown}")
                     }
                 },
             )

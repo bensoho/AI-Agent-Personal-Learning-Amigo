@@ -7,10 +7,10 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -74,7 +74,7 @@ private data class TopLevelDestination(val route: String, val label: String, val
 
 private val topLevelDestinations = listOf(
     TopLevelDestination(Routes.HOME, "首页", Icons.Filled.Home),
-    TopLevelDestination(Routes.CURRICULUM, "课程", Icons.Filled.List),
+    TopLevelDestination(Routes.CURRICULUM, "课程", Icons.AutoMirrored.Filled.List),
     TopLevelDestination(Routes.KNOWLEDGE, "知识点", Icons.Filled.Info),
     TopLevelDestination(Routes.REVIEW, "复习", Icons.Filled.Refresh),
     TopLevelDestination(Routes.STATS, "统计", Icons.Filled.DateRange),
