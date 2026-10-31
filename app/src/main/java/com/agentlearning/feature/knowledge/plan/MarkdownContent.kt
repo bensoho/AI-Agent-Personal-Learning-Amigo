@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
@@ -28,12 +30,9 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.agentlearning.feature.quiz.components.CodeBlock
 
-@Composable
-fun MarkdownContent(markdown: String, modifier: Modifier = Modifier) {
-    val blocks = remember(markdown) { MarkdownParser.parse(markdown) }
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        blocks.forEach { MarkdownBlock(it) }
-    }
+/** Adds parsed blocks as lazy items so long documents stay virtualized. */
+internal fun LazyListScope.markdownItems(blocks: List<MdBlock>) {
+    itemsIndexed(blocks, key = { index, _ -> index }) { _, block -> MarkdownBlock(block) }
 }
 
 @Composable

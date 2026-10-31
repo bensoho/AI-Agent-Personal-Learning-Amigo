@@ -9,9 +9,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
@@ -25,6 +24,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -39,6 +39,7 @@ import com.agentlearning.ui.components.Pill
 @Composable
 fun StudyPlanList(
     query: String,
+    listState: LazyListState,
     onDocumentClick: (String) -> Unit,
     viewModel: StudyPlanViewModel = hiltViewModel(),
 ) {
@@ -53,15 +54,16 @@ fun StudyPlanList(
             if (s.value.months.isEmpty() && s.value.guides.isEmpty()) {
                 EmptyHint(if (query.isBlank()) "暂无学习计划" else "没有匹配的学习内容")
             } else {
-                StudyPlanContent(s.value, onDocumentClick)
+                StudyPlanContent(s.value, listState, onDocumentClick)
             }
         }
     }
 }
 
 @Composable
-private fun StudyPlanContent(plan: StudyPlan, onDocumentClick: (String) -> Unit) {
+private fun StudyPlanContent(plan: StudyPlan, listState: LazyListState, onDocumentClick: (String) -> Unit) {
     LazyColumn(
+        state = listState,
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -158,12 +160,14 @@ fun StudyPlanDetailScreen(
             }
             is PlanLoadState.Error -> EmptyHint(s.message, Modifier.padding(padding))
             is PlanLoadState.Ready -> SelectionContainer {
-                Column(
-                    Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                val blocks = remember(s.value.markdown) { MarkdownParser.parse(s.value.markdown) }
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize().padding(padding),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Pill(s.value.subtitle)
-                    MarkdownContent(s.value.markdown)
+                    item(key = "subtitle") { Pill(s.value.subtitle) }
+                    markdownItems(blocks)
                 }
             }
         }
