@@ -14,6 +14,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.agentlearning.domain.model.ThemeMode
 import com.agentlearning.navigation.AppRoot
 import com.agentlearning.navigation.MainViewModel
+import com.agentlearning.ui.components.ProvideProcessTextToolbar
 import com.agentlearning.ui.theme.AgentLearningTheme
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -43,7 +44,9 @@ class MainActivity : ComponentActivity() {
             }
 
             AgentLearningTheme(darkTheme = darkTheme, fontScale = fontScale) {
-                AppRoot(mainViewModel)
+                ProvideProcessTextToolbar {
+                    AppRoot(mainViewModel)
+                }
             }
         }
     }
