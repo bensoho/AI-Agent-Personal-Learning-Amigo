@@ -14,7 +14,18 @@
 | 练习 | 单选、多选、代码阅读、代码补全、Debug 等题型，带答案解析 |
 | 复习 | 错题本 + 基础间隔复习调度 |
 | 统计 | 正确率、学习时长、每日记录等 |
-| 设置 | 主题（跟随系统/浅色/深色）、字体、音效等偏好设置，本地数据备份与恢复 |
+| 设置 | 主题（跟随系统/浅色/深色）、字体、音效、朗读（Azure 语音）等偏好设置，本地数据备份与恢复 |
+
+### 朗读（Azure 语音）
+
+知识点详情页和学习计划周详情页底部有“朗读本页”栏：播放/暂停、上一段/下一段、倍速（0.75x–2.0x），
+当前朗读的段落会高亮并自动滚动；代码块和表格会跳过。支持锁屏与通知栏控制、后台播放。
+
+- 使用微软 Azure 语音合成（神经网络音色，默认“晓晓多语言”，中英混读自然）。需要自备 Azure“语音服务”资源，
+  免费层（F0）每月 50 万字符，本课程全部内容读一遍约 6–7 万字符。
+- 在 **设置 → 朗读（Azure 语音）** 中填写密钥和区域（如 `eastasia`），点“保存并测试”。密钥用 Android Keystore 加密后保存在本机，不随 APK 分发。
+- 合成后的音频缓存在本机（上限 300 MB），重复收听不再消耗额度；设置页显示本月已合成字符数（仅统计本机）。
+- 代码位置：`app/src/main/java/com/agentlearning/feature/speech/`。
 
 ### 知识点 → 学习计划 Tab
 
@@ -33,6 +44,7 @@
 
 - Kotlin 2.0、Jetpack Compose（Material 3）、Navigation Compose
 - Hilt 依赖注入、Room（SQLite）、DataStore
+- Media3（ExoPlayer + MediaSession）用于朗读播放
 - kotlinx.serialization（题库 JSON）、Coroutines / Flow
 - 单元测试：JUnit 4、kotlinx-coroutines-test、Turbine
 - minSdk 26 / targetSdk 34，JDK 17
@@ -54,7 +66,8 @@
 │       │       ├── data/        # Room、题库导入、Repository 实现
 │       │       ├── domain/      # 领域模型、判题、进度、复习调度
 │       │       ├── feature/     # 各页面（home/curriculum/knowledge/quiz/review/statistics/settings）
-│       │       │   └── knowledge/plan/   # 学习计划解析、Markdown 渲染与页面
+│       │       │   ├── knowledge/plan/   # 学习计划解析、Markdown 渲染与页面
+│       │       │   └── speech/           # 朗读：Azure 语音合成、缓存、播放服务
 │       │       ├── navigation/  # 路由与底部导航
 │       │       └── ui/          # 通用组件与主题
 │       └── test/                # JVM 单元测试
@@ -79,7 +92,7 @@
 ./gradlew testDebugUnitTest    # 运行单元测试
 ```
 
-首次启动时 App 会把 `assets/questions` 中的题库导入本地 Room 数据库，之后完全离线可用。
+首次启动时 App 会把 `assets/questions` 中的题库导入本地 Room 数据库，之后完全离线可用（朗读功能除外，需要联网调用 Azure 语音）。
 
 ## 内容维护
 

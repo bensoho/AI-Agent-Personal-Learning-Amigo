@@ -30,9 +30,18 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.agentlearning.feature.quiz.components.CodeBlock
 
-/** Adds parsed blocks as lazy items so long documents stay virtualized. */
-internal fun LazyListScope.markdownItems(blocks: List<MdBlock>) {
-    itemsIndexed(blocks, key = { index, _ -> index }) { _, block -> MarkdownBlock(block) }
+/** Adds parsed blocks as lazy items so long documents stay virtualized; [highlightIndex] marks the block being read. */
+internal fun LazyListScope.markdownItems(blocks: List<MdBlock>, highlightIndex: Int? = null) {
+    itemsIndexed(blocks, key = { index, _ -> index }) { index, block ->
+        val highlight = if (index == highlightIndex) {
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+        } else {
+            Color.Transparent
+        }
+        Column(Modifier.fillMaxWidth().background(highlight, RoundedCornerShape(6.dp))) {
+            MarkdownBlock(block)
+        }
+    }
 }
 
 @Composable

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -35,6 +36,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.agentlearning.ui.components.AppCard
 import com.agentlearning.ui.components.EmptyHint
 import com.agentlearning.ui.components.Pill
+import com.agentlearning.feature.speech.ReadAloudBar
+import com.agentlearning.feature.speech.ReadAloudViewModel
+import com.agentlearning.feature.speech.ReadingDocument
+import com.agentlearning.feature.speech.SpeechText
+import com.agentlearning.feature.speech.highlightFor
 
 /** Content of the "学习计划" tab: the bundled plan grouped by month and week. */
 @Composable
@@ -135,10 +141,26 @@ private fun PlanCard(title: String, subtitle: String, pill: String?, onClick: ()
 @Composable
 fun StudyPlanDetailScreen(
     onBack: () -> Unit,
+    onOpenSettings: () -> Unit,
     viewModel: StudyPlanDetailViewModel = hiltViewModel(),
+    readAloud: ReadAloudViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val readState by readAloud.uiState.collectAsStateWithLifecycle()
     val document = (state as? PlanLoadState.Ready)?.value
+    val blocks = remember(document?.markdown) { document?.markdown?.let(MarkdownParser::parse).orEmpty() }
+    val reading = remember(document, blocks) {
+        document?.let { ReadingDocument("plan:${it.id}", it.title, SpeechText.fromMarkdown(blocks)) }
+    }
+    val highlight = reading?.let { readState.highlightFor(it.id) }
+    val listState = rememberLazyListState()
+
+    // Keep the paragraph being read on screen; item 0 is the subtitle pill.
+    LaunchedEffect(highlight) {
+        val target = (highlight ?: return@LaunchedEffect) + 1
+        val visible = listState.layoutInfo.visibleItemsInfo.map { it.index }
+        if (target !in visible.drop(1).dropLast(1)) listState.animateScrollToItem(target)
+    }
 
     Scaffold(
         topBar = {
@@ -158,6 +180,7 @@ fun StudyPlanDetailScreen(
                 },
             )
         },
+        bottomBar = { ReadAloudBar(reading, readState, readAloud, onOpenSettings) },
     ) { padding ->
         when (val s = state) {
             PlanLoadState.Loading -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
@@ -165,14 +188,14 @@ fun StudyPlanDetailScreen(
             }
             is PlanLoadState.Error -> EmptyHint(s.message, Modifier.padding(padding))
             is PlanLoadState.Ready -> SelectionContainer {
-                val blocks = remember(s.value.markdown) { MarkdownParser.parse(s.value.markdown) }
                 LazyColumn(
                     modifier = Modifier.fillMaxSize().padding(padding),
+                    state = listState,
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     item(key = "subtitle") { Pill(s.value.subtitle) }
-                    markdownItems(blocks)
+                    markdownItems(blocks, highlight)
                 }
             }
         }

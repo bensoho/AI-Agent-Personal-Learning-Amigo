@@ -154,7 +154,10 @@ private fun AppScaffold() {
                 Routes.PLAN_DETAIL,
                 arguments = listOf(navArgument("documentId") { type = NavType.StringType }),
             ) {
-                StudyPlanDetailScreen(onBack = { navController.popBackStack() })
+                StudyPlanDetailScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                )
             }
             composable(Routes.REVIEW) {
                 ReviewScreen(onStartQuiz = { navController.navigate(Routes.quiz(it)) })
@@ -169,6 +172,7 @@ private fun AppScaffold() {
                 KnowledgeDetailScreen(
                     onBack = { navController.popBackStack() },
                     onStartQuiz = { navController.navigate(Routes.quiz(StudyMode.TOPIC, topicId)) },
+                    onOpenSettings = { navController.navigate(Routes.SETTINGS) },
                 )
             }
             composable(

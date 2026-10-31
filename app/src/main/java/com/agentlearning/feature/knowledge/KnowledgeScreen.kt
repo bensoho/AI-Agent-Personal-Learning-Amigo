@@ -44,6 +44,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -59,6 +60,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.agentlearning.domain.model.CourseOutline
 import com.agentlearning.feature.curriculum.TopicDetailViewModel
 import com.agentlearning.feature.knowledge.plan.StudyPlanList
+import com.agentlearning.feature.speech.ReadAloudBar
+import com.agentlearning.feature.speech.ReadAloudViewModel
+import com.agentlearning.feature.speech.ReadingDocument
+import com.agentlearning.feature.speech.SpeechText
+import com.agentlearning.feature.speech.highlightFor
 import com.agentlearning.ui.components.AppCard
 import com.agentlearning.ui.components.EmptyHint
 import com.agentlearning.ui.components.Pill
@@ -278,10 +284,25 @@ private fun TopicList(
 fun KnowledgeDetailScreen(
     onBack: () -> Unit,
     onStartQuiz: () -> Unit,
+    onOpenSettings: () -> Unit,
     viewModel: TopicDetailViewModel = hiltViewModel(),
+    readAloud: ReadAloudViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val readState by readAloud.uiState.collectAsStateWithLifecycle()
     val topic = state.topic
+    // The title and description are read first but not highlighted (block index -1).
+    val reading = remember(topic) {
+        topic?.let {
+            val notes = it.notes?.let(::parseNotes).orEmpty().speakableBlocks()
+            ReadingDocument(
+                id = "topic:${it.id}",
+                title = it.title,
+                segments = SpeechText.fromBlocks(listOf(-1 to it.title, -1 to it.description) + notes),
+            )
+        }
+    }
+    val highlight = reading?.let { readState.highlightFor(it.id) }
 
     Scaffold(
         topBar = {
@@ -294,6 +315,7 @@ fun KnowledgeDetailScreen(
                 },
             )
         },
+        bottomBar = { ReadAloudBar(reading, readState, readAloud, onOpenSettings) },
     ) { padding ->
         Column(
             Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
@@ -308,7 +330,7 @@ fun KnowledgeDetailScreen(
                             Text(text, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         if (it.notes != null) {
-                            NoteContent(it.notes)
+                            NoteContent(it.notes, highlightIndex = highlight)
                         } else {
                             Text("该知识点的笔记整理中。", style = MaterialTheme.typography.bodyMedium)
                         }

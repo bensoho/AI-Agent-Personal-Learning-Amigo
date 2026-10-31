@@ -52,7 +52,7 @@ import java.util.Locale
 import kotlin.math.roundToInt
 
 @Composable
-private fun SettingsCard(title: String, content: @Composable ColumnScope.() -> Unit) {
+internal fun SettingsCard(title: String, content: @Composable ColumnScope.() -> Unit) {
     AppCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
@@ -148,6 +148,8 @@ fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewMo
                     Switch(checked = state.soundEnabled, onCheckedChange = viewModel::setSoundEnabled)
                 }
             }
+
+            SpeechSettingsCard()
 
             SettingsCard("每日学习目标") {
                 Row(
