@@ -1,12 +1,15 @@
 package com.agentlearning.feature.quiz
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
@@ -25,12 +28,17 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -42,7 +50,7 @@ import com.agentlearning.ui.components.Pill
 import com.agentlearning.ui.components.displayName
 import com.agentlearning.ui.components.label
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun QuizScreen(
     onExit: () -> Unit,
@@ -50,6 +58,9 @@ fun QuizScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val question = state.current
+    val scrollState = rememberScrollState()
+    val explanationRequester = remember { BringIntoViewRequester() }
+    val haptics = LocalHapticFeedback.current
     var confirmExit by rememberSaveable { mutableStateOf(false) }
     val exit: () -> Unit = {
         viewModel.onExit()
@@ -60,6 +71,15 @@ fun QuizScreen(
             confirmExit = true
         } else {
             exit()
+        }
+    }
+
+    // Reveal the verdict even when long options pushed it below the fold.
+    LaunchedEffect(question?.id, state.submitted) {
+        if (question != null && state.submitted) {
+            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            withFrameNanos { }
+            explanationRequester.bringIntoView()
         }
     }
 
@@ -114,7 +134,7 @@ fun QuizScreen(
             }
 
             question != null -> Column(
-                Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
+                Modifier.fillMaxSize().padding(padding).verticalScroll(scrollState).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 LinearProgressIndicator(
@@ -146,7 +166,9 @@ fun QuizScreen(
                     onToggle = viewModel::toggleOption,
                 )
                 if (state.submitted) {
-                    SelectionContainer { AnswerExplanation(question, state.lastCorrect) }
+                    SelectionContainer(Modifier.bringIntoViewRequester(explanationRequester)) {
+                        AnswerExplanation(question, state.lastCorrect)
+                    }
                     state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     Button(onClick = viewModel::next, modifier = Modifier.fillMaxWidth()) {
                         Text(if (state.isLast) "完成" else "下一题")

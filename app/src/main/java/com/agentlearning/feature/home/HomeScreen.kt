@@ -82,7 +82,8 @@ fun HomeScreen(
                     if (darkTheme) {
                         listOf(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.secondaryContainer)
                     } else {
-                        listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary)
+                        // Deeper than the scheme's primary/secondary so white text keeps 4.5:1+ contrast across the gradient.
+                        listOf(Color(0xFF4338CA), Color(0xFF0F766E))
                     }
                 )
                 Box(
@@ -102,7 +103,7 @@ fun HomeScreen(
                             Text(
                                 if (progress >= 1f) "今日目标已达成" else "还差 ${(state.dailyGoal - today).coerceAtLeast(0)} 题",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = Color.White.copy(alpha = 0.85f),
+                                color = Color.White,
                             )
                         }
                         Box(contentAlignment = Alignment.Center) {

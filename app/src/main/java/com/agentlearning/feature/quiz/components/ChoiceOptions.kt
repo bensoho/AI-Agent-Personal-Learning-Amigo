@@ -6,8 +6,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
@@ -63,7 +68,26 @@ fun ChoiceOptions(
                     } else {
                         RadioButton(selected = isSelected, onClick = null, enabled = !submitted)
                     }
-                    Text("${optionLabel(index)}. ${option.text}", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(start = 8.dp))
+                    Text(
+                        "${optionLabel(index)}. ${option.text}",
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.weight(1f).padding(start = 8.dp),
+                    )
+                    // Shape + color mark the result, so correctness is not conveyed by color alone.
+                    when {
+                        submitted && isCorrect -> Icon(
+                            Icons.Filled.CheckCircle,
+                            contentDescription = "正确答案",
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        submitted && isSelected -> Icon(
+                            Icons.Filled.Close,
+                            contentDescription = "选择错误",
+                            tint = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
                 }
             }
         }
