@@ -4,10 +4,12 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Upsert
 import com.agentlearning.data.local.entity.AnswerRecordEntity
 import com.agentlearning.data.local.entity.CourseEntity
 import com.agentlearning.data.local.entity.QuestionEntity
+import com.agentlearning.data.local.entity.ReadCountEntity
 import com.agentlearning.data.local.entity.ReviewRecordEntity
 import com.agentlearning.data.local.entity.StudySessionEntity
 import com.agentlearning.data.local.entity.TopicEntity
@@ -244,6 +246,32 @@ interface ReviewRecordDao {
     suspend fun getAll(): List<ReviewRecordEntity>
 
     @Query("DELETE FROM review_records")
+    suspend fun deleteAll()
+}
+
+@Dao
+interface ReadCountDao {
+    @Query("SELECT * FROM read_counts")
+    fun observeAll(): Flow<List<ReadCountEntity>>
+
+    @Query("UPDATE read_counts SET count = count + 1, lastReadAt = :readAt WHERE contentKey = :contentKey")
+    suspend fun increment(contentKey: String, readAt: Long): Int
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insert(item: ReadCountEntity)
+
+    @Transaction
+    suspend fun recordRead(contentKey: String, readAt: Long) {
+        if (increment(contentKey, readAt) == 0) insert(ReadCountEntity(contentKey, count = 1, lastReadAt = readAt))
+    }
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertAll(items: List<ReadCountEntity>)
+
+    @Query("SELECT * FROM read_counts ORDER BY contentKey")
+    suspend fun getAll(): List<ReadCountEntity>
+
+    @Query("DELETE FROM read_counts")
     suspend fun deleteAll()
 }
 

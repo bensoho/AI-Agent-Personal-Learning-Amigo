@@ -72,3 +72,17 @@ interface BackupRepository {
     suspend fun restore(backup: ParsedBackup)
     suspend fun resetUserData()
 }
+
+/** Keys identifying readable content in [ReadingRepository]. */
+object ReadKeys {
+    fun topic(topicId: String) = "topic:$topicId"
+    fun planDocument(documentId: String) = "plan:$documentId"
+}
+
+interface ReadingRepository {
+    /** Read counts keyed by [ReadKeys]; content never read is absent. */
+    fun observeReadCounts(): Flow<Map<String, Int>>
+
+    /** Records one read; persisted on an app-wide scope so it survives the caller being cleared. */
+    fun recordRead(contentKey: String)
+}

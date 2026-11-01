@@ -5,11 +5,13 @@ import androidx.room.Room
 import com.agentlearning.data.local.AppDatabase
 import com.agentlearning.data.repository.BackupRepositoryImpl
 import com.agentlearning.data.repository.CurriculumRepositoryImpl
+import com.agentlearning.data.repository.ReadingRepositoryImpl
 import com.agentlearning.data.repository.SettingsRepositoryImpl
 import com.agentlearning.data.repository.StatsRepositoryImpl
 import com.agentlearning.data.repository.StudyRepositoryImpl
 import com.agentlearning.domain.repository.BackupRepository
 import com.agentlearning.domain.repository.CurriculumRepository
+import com.agentlearning.domain.repository.ReadingRepository
 import com.agentlearning.domain.repository.SettingsRepository
 import com.agentlearning.domain.repository.StatsRepository
 import com.agentlearning.domain.repository.StudyRepository
@@ -32,7 +34,7 @@ object AppModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, AppDatabase.NAME)
-            .addMigrations(AppDatabase.MIGRATION_1_2)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3)
             .build()
 
     @Provides fun provideCourseDao(db: AppDatabase) = db.courseDao()
@@ -41,6 +43,7 @@ object AppModule {
     @Provides fun provideAnswerRecordDao(db: AppDatabase) = db.answerRecordDao()
     @Provides fun provideReviewRecordDao(db: AppDatabase) = db.reviewRecordDao()
     @Provides fun provideStudySessionDao(db: AppDatabase) = db.studySessionDao()
+    @Provides fun provideReadCountDao(db: AppDatabase) = db.readCountDao()
 
     @Provides
     @Singleton
@@ -64,4 +67,5 @@ abstract class RepositoryModule {
     @Binds abstract fun stats(impl: StatsRepositoryImpl): StatsRepository
     @Binds abstract fun settings(impl: SettingsRepositoryImpl): SettingsRepository
     @Binds abstract fun backup(impl: BackupRepositoryImpl): BackupRepository
+    @Binds abstract fun reading(impl: ReadingRepositoryImpl): ReadingRepository
 }

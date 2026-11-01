@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.agentlearning.domain.model.CourseOutline
 import com.agentlearning.domain.repository.CurriculumRepository
+import com.agentlearning.domain.repository.ReadingRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
@@ -22,7 +23,11 @@ import javax.inject.Inject
 @HiltViewModel
 class KnowledgeViewModel @Inject constructor(
     repository: CurriculumRepository,
+    readingRepository: ReadingRepository,
 ) : ViewModel() {
+
+    val readCounts: StateFlow<Map<String, Int>> = readingRepository.observeReadCounts()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()

@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.agentlearning.domain.model.CourseOutline
+import com.agentlearning.domain.repository.ReadKeys
 import com.agentlearning.feature.curriculum.TopicDetailViewModel
 import com.agentlearning.feature.knowledge.plan.StudyPlanList
 import com.agentlearning.ui.components.AppCard
@@ -73,6 +74,7 @@ fun KnowledgeScreen(
     viewModel: KnowledgeViewModel = hiltViewModel(),
 ) {
     val courses by viewModel.courses.collectAsStateWithLifecycle()
+    val readCounts by viewModel.readCounts.collectAsStateWithLifecycle()
     val query by viewModel.query.collectAsStateWithLifecycle()
     val filterQuery by viewModel.filterQuery.collectAsStateWithLifecycle()
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
@@ -148,6 +150,7 @@ fun KnowledgeScreen(
             } else {
                 TopicList(
                     courses = courses,
+                    readCounts = readCounts,
                     query = filterQuery,
                     listState = listState,
                     onTopicClick = onTopicClick,
@@ -211,6 +214,7 @@ private fun SearchField(
 @Composable
 private fun TopicList(
     courses: List<CourseOutline>,
+    readCounts: Map<String, Int>,
     query: String,
     listState: LazyListState,
     onTopicClick: (String) -> Unit,
@@ -247,7 +251,7 @@ private fun TopicList(
                                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                     Row(
                                         Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
                                         Text(topic.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
@@ -260,6 +264,7 @@ private fun TopicList(
                                                 content = MaterialTheme.colorScheme.onSurfaceVariant,
                                             )
                                         }
+                                        ReadCountPill(readCounts[ReadKeys.topic(topic.id)] ?: 0)
                                     }
                                     topic.description?.let {
                                         Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -283,6 +288,7 @@ fun KnowledgeDetailScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val topic = state.topic
+    TrackReadingTime(onResume = viewModel::onReadingResumed, onPause = viewModel::onReadingPaused)
 
     Scaffold(
         topBar = {

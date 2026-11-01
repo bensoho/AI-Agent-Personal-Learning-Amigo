@@ -32,6 +32,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.agentlearning.domain.repository.ReadKeys
+import com.agentlearning.feature.knowledge.ReadCountPill
+import com.agentlearning.feature.knowledge.TrackReadingTime
 import com.agentlearning.ui.components.AppCard
 import com.agentlearning.ui.components.EmptyHint
 import com.agentlearning.ui.components.Pill
@@ -47,6 +50,7 @@ fun StudyPlanList(
 ) {
     LaunchedEffect(query) { viewModel.setQuery(query) }
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val readCounts by viewModel.readCounts.collectAsStateWithLifecycle()
     when (val s = state) {
         PlanLoadState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
@@ -56,14 +60,20 @@ fun StudyPlanList(
             if (s.value.months.isEmpty() && s.value.guides.isEmpty()) {
                 EmptyHint(if (query.isBlank()) "暂无学习计划" else "没有匹配的学习内容")
             } else {
-                StudyPlanContent(s.value, listState, onDocumentClick)
+                StudyPlanContent(s.value, readCounts, listState, onDocumentClick)
             }
         }
     }
 }
 
 @Composable
-private fun StudyPlanContent(plan: StudyPlan, listState: LazyListState, onDocumentClick: (String) -> Unit) {
+private fun StudyPlanContent(
+    plan: StudyPlan,
+    readCounts: Map<String, Int>,
+    listState: LazyListState,
+    onDocumentClick: (String) -> Unit,
+) {
+    fun readCount(documentId: String) = readCounts[ReadKeys.planDocument(documentId)] ?: 0
     LazyColumn(
         state = listState,
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
@@ -75,7 +85,9 @@ private fun StudyPlanContent(plan: StudyPlan, listState: LazyListState, onDocume
             }
             plan.guides.forEach { guide ->
                 item(key = "guide-${guide.id}") {
-                    PlanCard(guide.title, guide.subtitle, pill = null) { onDocumentClick(guide.id) }
+                    PlanCard(guide.title, guide.subtitle, pill = null, readCount = readCount(guide.id)) {
+                        onDocumentClick(guide.id)
+                    }
                 }
             }
         }
@@ -98,6 +110,7 @@ private fun StudyPlanContent(plan: StudyPlan, listState: LazyListState, onDocume
                         title = week.title,
                         subtitle = "课程安排 · 学习讲义 · 代码示例",
                         pill = "Week %02d".format(week.number),
+                        readCount = readCount(week.document.id),
                     ) { onDocumentClick(week.document.id) }
                 }
             }
@@ -106,7 +119,7 @@ private fun StudyPlanContent(plan: StudyPlan, listState: LazyListState, onDocume
 }
 
 @Composable
-private fun PlanCard(title: String, subtitle: String, pill: String?, onClick: () -> Unit) {
+private fun PlanCard(title: String, subtitle: String, pill: String?, readCount: Int, onClick: () -> Unit) {
     AppCard(Modifier.fillMaxWidth(), onClick = onClick) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(
@@ -122,6 +135,7 @@ private fun PlanCard(title: String, subtitle: String, pill: String?, onClick: ()
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
+                ReadCountPill(readCount)
             }
             Text(
                 subtitle,
@@ -140,6 +154,7 @@ fun StudyPlanDetailScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val document = (state as? PlanLoadState.Ready)?.value
+    TrackReadingTime(onResume = viewModel::onReadingResumed, onPause = viewModel::onReadingPaused)
 
     Scaffold(
         topBar = {

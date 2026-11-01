@@ -3,6 +3,7 @@ package com.agentlearning.data.repository
 import androidx.room.withTransaction
 import com.agentlearning.data.local.AppDatabase
 import com.agentlearning.data.local.entity.AnswerRecordEntity
+import com.agentlearning.data.local.entity.ReadCountEntity
 import com.agentlearning.data.local.entity.ReviewRecordEntity
 import com.agentlearning.data.local.entity.StudySessionEntity
 import com.agentlearning.domain.model.BackupPreview
@@ -27,6 +28,7 @@ data class BackupFile(
     val sessions: List<StudySessionEntity>,
     val answers: List<AnswerRecordEntity>,
     val reviews: List<ReviewRecordEntity>,
+    val readCounts: List<ReadCountEntity> = emptyList(),
 ) {
     companion object {
         const val FORMAT = "agent-learning-backup"
@@ -59,6 +61,7 @@ class BackupRepositoryImpl @Inject constructor(
             sessions = database.studySessionDao().getAll(),
             answers = database.answerRecordDao().getAll(),
             reviews = database.reviewRecordDao().getAll(),
+            readCounts = database.readCountDao().getAll(),
         )
         json.encodeToString(BackupFile.serializer(), file)
     }
@@ -95,6 +98,7 @@ class BackupRepositoryImpl @Inject constructor(
             database.studySessionDao().insertAll(file.sessions)
             database.answerRecordDao().insertAll(file.answers)
             database.reviewRecordDao().insertAll(file.reviews)
+            database.readCountDao().insertAll(file.readCounts)
         }
     }
 
@@ -106,5 +110,6 @@ class BackupRepositoryImpl @Inject constructor(
         database.answerRecordDao().deleteAll()
         database.reviewRecordDao().deleteAll()
         database.studySessionDao().deleteAll()
+        database.readCountDao().deleteAll()
     }
 }
