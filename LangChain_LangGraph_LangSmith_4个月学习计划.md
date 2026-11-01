@@ -2453,17 +2453,21 @@ Integration，根据实际使用的模型、向量数据库和工具逐步安装
 ## 1. 不要只学习 API，要理解 Agent 底层原理
 
 例如学习 LangGraph 时，不要只记住 `add_node()`、`add_edge()` 和
-`add_conditional_edges()`，还要理解： - State 如何变化？ - Node
-为什么这样设计？ - Graph 如何决定下一步？ - Agent
-如何判断任务是否完成？ - 执行失败后如何恢复？
+`add_conditional_edges()`，还要理解：
+
+- State 如何变化？
+- Node 为什么这样设计？
+- Graph 如何决定下一步？
+- Agent 如何判断任务是否完成？
+- 执行失败后如何恢复？
 
 ## 2. 建议时间分配
 
-  学习活动     时间占比
-  ---------- ----------
-  理论学习          30%
-  编码实战          60%
-  复盘总结          10%
+| 学习活动 | 时间占比 |
+|---|---:|
+| 理论学习 | 30% |
+| 编码实战 | 60% |
+| 复盘总结 | 10% |
 
 不要花大量时间看视频、记笔记，却没有真正写代码。
 
@@ -2500,20 +2504,25 @@ ai-agent-learning/
 
 ## 4. 重视 LangSmith Evaluation
 
-传统软件测试验证输入、输出和函数行为；AI Agent 还需要评估： -
-回答是否准确。 - 是否调用正确的工具。 - 是否检索到相关内容。 -
-是否遵循业务规则。 - 是否出现幻觉。 - 是否在合理成本和时间内完成任务。
+传统软件测试验证输入、输出和函数行为；AI Agent 还需要评估：
+
+- 回答是否准确。
+- 是否调用正确的工具。
+- 是否检索到相关内容。
+- 是否遵循业务规则。
+- 是否出现幻觉。
+- 是否在合理成本和时间内完成任务。
 
 传统软件工程与 Agent 工程的实践对应：
 
-  传统软件工程          AI Agent 工程
-  --------------------- -----------------------------
-  Unit Testing          Node / Tool Testing
-  Integration Testing   Agent Workflow Testing
-  Regression Testing    LLM Evaluation
-  Code Coverage         Evaluation Dataset Coverage
-  CI Quality Gate       AI Quality Gate
-  Application Logging   LangSmith Tracing
+| 传统软件工程 | AI Agent 工程 |
+|---|---|
+| Unit Testing | Node / Tool Testing |
+| Integration Testing | Agent Workflow Testing |
+| Regression Testing | LLM Evaluation |
+| Code Coverage | Evaluation Dataset Coverage |
+| CI Quality Gate | AI Quality Gate |
+| Application Logging | LangSmith Tracing |
 
 注意：LLM 评估具有概率性，不能简单把传统代码覆盖率等同于 Agent
 质量。应结合规则型评估、模型评审和人工抽样。

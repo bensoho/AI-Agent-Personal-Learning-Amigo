@@ -141,6 +141,8 @@
 - 第三章中的 `## 第N个月：标题`、`### 第N周：标题`，以及 `**月度目标：**`
 - 第四、五章中的 `## 第N周：标题`
 
+「资源与建议」中的列表应每项独占一行，并与前面的正文空行分隔；表格优先使用带 `|` 的 Markdown 表头、分隔行和数据行，避免将列表混排进段落或使用省略边框的 Pandoc 表格。
+
 ### 更新题库
 
 题库位于 `app/src/main/assets/questions/`，编写规范见 [tools/question-bank-guide.txt](./tools/question-bank-guide.txt)。修改后先校验：
