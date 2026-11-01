@@ -29,35 +29,46 @@ fun StatisticsScreen(viewModel: StatisticsViewModel = hiltViewModel()) {
 
     LazyColumn(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         item { Text("学习统计", style = MaterialTheme.typography.headlineMedium) }
 
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                StatCard("累计正确率", summary?.accuracy.asPercent(), Modifier.weight(1f))
-                StatCard("连续学习", "${summary?.streakDays ?: 0} 天", Modifier.weight(1f))
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    StatCard("累计正确率", summary?.accuracy.asPercent(), Modifier.weight(1f), emphasized = true)
+                    StatCard("连续学习", "${summary?.streakDays ?: 0} 天", Modifier.weight(1f))
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    StatCard("累计答题", "${summary?.totalAnswers ?: 0}", Modifier.weight(1f))
+                    StatCard("当前错题", "${state.wrongCount}", Modifier.weight(1f))
+                }
             }
         }
+
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                StatCard("累计答题", "${summary?.totalAnswers ?: 0}", Modifier.weight(1f))
-                StatCard("当前错题", "${state.wrongCount}", Modifier.weight(1f))
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                SectionTitle("最近 7 天完成题数")
+                DailyBars(state.daily)
             }
         }
 
-        item { SectionTitle("最近 7 天完成题数") }
-        item { DailyBars(state.daily) }
-
-        item { SectionTitle("每周正确率") }
-        if (state.weekly.isEmpty()) {
-            item { Text("暂无数据") }
-        } else {
-            items(state.weekly.size) { index ->
-                val week = state.weekly[index]
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("${week.label}  ${week.accuracy.asPercent()}（${week.correct}/${week.total}）")
-                    AppLinearProgress(progress = week.accuracy ?: 0f, modifier = Modifier.fillMaxWidth())
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                SectionTitle("每周正确率")
+                if (state.weekly.isEmpty()) {
+                    Text(
+                        "暂无数据",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    state.weekly.forEach { week ->
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("${week.label}  ${week.accuracy.asPercent()}（${week.correct}/${week.total}）")
+                            AppLinearProgress(progress = week.accuracy ?: 0f, modifier = Modifier.fillMaxWidth())
+                        }
+                    }
                 }
             }
         }

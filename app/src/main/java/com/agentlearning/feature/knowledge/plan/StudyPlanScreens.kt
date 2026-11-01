@@ -43,12 +43,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.agentlearning.domain.repository.ReadKeys
 import com.agentlearning.feature.knowledge.ReadCountPill
+import com.agentlearning.feature.knowledge.KnowledgeFilters
+import com.agentlearning.feature.knowledge.KnowledgeScope
+import com.agentlearning.feature.knowledge.SearchResultText
 import com.agentlearning.feature.knowledge.TrackReadingTime
+import com.agentlearning.feature.knowledge.searchExcerpt
 import com.agentlearning.ui.components.AppCard
 import com.agentlearning.ui.components.AppLinearProgress
 import com.agentlearning.ui.components.EmptyHint
@@ -60,30 +63,47 @@ import kotlinx.coroutines.launch
 @Composable
 fun StudyPlanList(
     query: String,
+    scope: KnowledgeScope,
+    onMonthChange: (Int?) -> Unit,
+    onWeekChange: (Int?) -> Unit,
     listState: LazyListState,
     onDocumentClick: (String) -> Unit,
-    onClearQuery: (() -> Unit)? = null,
+    onResetFilters: () -> Unit,
     viewModel: StudyPlanViewModel = hiltViewModel(),
 ) {
-    LaunchedEffect(query) { viewModel.setQuery(query) }
+    LaunchedEffect(query, scope) { viewModel.setSearch(query, scope) }
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val catalog by viewModel.catalog.collectAsStateWithLifecycle()
     val readCounts by viewModel.readCounts.collectAsStateWithLifecycle()
-    when (val s = state) {
-        PlanLoadState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator()
-        }
-        is PlanLoadState.Error -> EmptyHint(s.message)
-        is PlanLoadState.Ready -> {
-            if (s.value.months.isEmpty() && s.value.guides.isEmpty()) {
-                val hasQuery = query.isNotBlank()
-                EmptyHint(
-                    text = if (hasQuery) "没有匹配的学习内容" else "暂无学习计划",
-                    icon = if (hasQuery) Icons.Filled.Search else Icons.Filled.Info,
-                    actionText = if (hasQuery) "清除搜索" else null,
-                    onAction = onClearQuery,
-                )
-            } else {
-                StudyPlanContent(s.value, readCounts, listState, onDocumentClick)
+    Column(Modifier.fillMaxSize()) {
+        KnowledgeFilters(
+            months = catalog?.months.orEmpty().map { it.number },
+            weeks = catalog?.months.orEmpty().filter { scope.monthNumber == null || it.number == scope.monthNumber }
+                .flatMap { month -> month.weeks.map { it.number } },
+            scope = scope,
+            onMonthChange = onMonthChange,
+            onWeekChange = onWeekChange,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
+        Box(Modifier.weight(1f)) {
+            when (val s = state) {
+                PlanLoadState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+                is PlanLoadState.Error -> EmptyHint(s.message)
+                is PlanLoadState.Ready -> {
+                    if (s.value.months.isEmpty() && s.value.guides.isEmpty()) {
+                        val hasQuery = query.isNotBlank() || scope.isActive
+                        EmptyHint(
+                            text = if (hasQuery) "当前筛选下没有匹配的学习内容" else "暂无学习计划",
+                            icon = if (hasQuery) Icons.Filled.Search else Icons.Filled.Info,
+                            actionText = if (hasQuery) "重置筛选" else null,
+                            onAction = onResetFilters,
+                        )
+                    } else {
+                        StudyPlanContent(s.value, readCounts, listState, query, onDocumentClick)
+                    }
+                }
             }
         }
     }
@@ -94,6 +114,7 @@ private fun StudyPlanContent(
     plan: StudyPlan,
     readCounts: Map<String, Int>,
     listState: LazyListState,
+    query: String,
     onDocumentClick: (String) -> Unit,
 ) {
     fun readCount(documentId: String) = readCounts[ReadKeys.planDocument(documentId)] ?: 0
@@ -108,7 +129,10 @@ private fun StudyPlanContent(
             }
             plan.guides.forEach { guide ->
                 item(key = "guide-${guide.id}") {
-                    PlanCard(guide.title, guide.subtitle, pill = null, readCount = readCount(guide.id)) {
+                    PlanCard(
+                        guide.title, guide.subtitle, pill = null, readCount = readCount(guide.id),
+                        query = query, markdown = guide.markdown,
+                    ) {
                         onDocumentClick(guide.id)
                     }
                 }
@@ -117,7 +141,7 @@ private fun StudyPlanContent(
         plan.months.forEach { month ->
             item(key = "month-${month.number}") {
                 Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("Month ${month.number} · ${month.title}", style = MaterialTheme.typography.titleMedium)
+                    SearchResultText("Month ${month.number} · ${month.title}", query, style = MaterialTheme.typography.titleMedium)
                     month.goal?.let {
                         Text(
                             "月度目标：$it",
@@ -134,6 +158,8 @@ private fun StudyPlanContent(
                         subtitle = "课程安排 · 学习讲义 · 代码示例",
                         pill = "Week %02d".format(week.number),
                         readCount = readCount(week.document.id),
+                        query = query,
+                        markdown = week.document.markdown,
                     ) { onDocumentClick(week.document.id) }
                 }
             }
@@ -142,29 +168,44 @@ private fun StudyPlanContent(
 }
 
 @Composable
-private fun PlanCard(title: String, subtitle: String, pill: String?, readCount: Int, onClick: () -> Unit) {
+private fun PlanCard(
+    title: String,
+    subtitle: String,
+    pill: String?,
+    readCount: Int,
+    query: String,
+    markdown: String,
+    onClick: () -> Unit,
+) {
     AppCard(Modifier.fillMaxWidth(), onClick = onClick) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SearchResultText(
+                title,
+                query = query,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 2,
+            )
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            val excerpt = remember(markdown, title, query) {
+                if (query.isNotBlank() && !title.contains(query, ignoreCase = true)) searchExcerpt(markdown, query) else null
+            }
+            excerpt?.let {
+                SearchResultText(it, query, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                pill?.let { Pill(it) }
-                Text(
-                    title,
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
+                pill?.let {
+                    Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 ReadCountPill(readCount)
             }
-            Text(
-                subtitle,
-                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp, lineHeight = 17.sp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
     }
 }

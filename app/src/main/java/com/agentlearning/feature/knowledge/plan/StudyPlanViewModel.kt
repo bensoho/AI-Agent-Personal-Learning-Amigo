@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.agentlearning.domain.repository.ReadKeys
 import com.agentlearning.domain.repository.ReadingRepository
 import com.agentlearning.feature.knowledge.ReadTimer
+import com.agentlearning.feature.knowledge.KnowledgeScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -34,15 +35,16 @@ class StudyPlanViewModel @Inject constructor(
     val readCounts: StateFlow<Map<String, Int>> = readingRepository.observeReadCounts()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
-    private val query = MutableStateFlow("")
+    private val search = MutableStateFlow("" to KnowledgeScope())
     private val plan = MutableStateFlow<StudyPlan?>(null)
+    val catalog: StateFlow<StudyPlan?> = plan.asStateFlow()
     private val error = MutableStateFlow<String?>(null)
 
     // Scanning the whole plan markdown per query is kept off the main thread.
     val state: StateFlow<PlanLoadState<StudyPlan>> =
-        combine(plan, error, query) { plan, error, query ->
+        combine(plan, error, search) { plan, error, search ->
             when {
-                plan != null -> PlanLoadState.Ready(plan.filter(query))
+                plan != null -> PlanLoadState.Ready(plan.filter(search.first, search.second))
                 error != null -> PlanLoadState.Error(error)
                 else -> PlanLoadState.Loading
             }
@@ -58,8 +60,8 @@ class StudyPlanViewModel @Inject constructor(
         }
     }
 
-    fun setQuery(value: String) {
-        query.value = value.trim()
+    fun setSearch(value: String, scope: KnowledgeScope) {
+        search.value = value.trim() to scope
     }
 }
 
