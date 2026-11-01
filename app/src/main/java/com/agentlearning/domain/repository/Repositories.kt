@@ -29,7 +29,7 @@ interface StudyRepository {
     suspend fun startSession(mode: StudyMode): Long
     suspend fun finishSession(sessionId: Long)
 
-    /** Saves the answer, updates the review schedule and session counters atomically. */
+    /** Saves the answer, schedule and counters atomically; identical retries within a session are idempotent. */
     suspend fun recordAnswer(
         questionId: String,
         sessionId: Long?,

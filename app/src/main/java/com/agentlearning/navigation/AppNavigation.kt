@@ -196,7 +196,12 @@ private fun AppScaffold() {
             composable(Routes.REVIEW) {
                 ReviewScreen(onStartQuiz = { navController.navigate(Routes.quiz(it)) })
             }
-            composable(Routes.STATS) { StatisticsScreen() }
+            composable(Routes.STATS) {
+                StatisticsScreen(
+                    onStartQuiz = { navController.navigate(Routes.quiz(it)) },
+                    onPracticeTopic = { navController.navigate(Routes.quiz(StudyMode.TOPIC, it)) },
+                )
+            }
             composable(Routes.SETTINGS) { SettingsScreen(onBack = { navController.popBackStack() }) }
             composable(
                 Routes.KNOWLEDGE_DETAIL,

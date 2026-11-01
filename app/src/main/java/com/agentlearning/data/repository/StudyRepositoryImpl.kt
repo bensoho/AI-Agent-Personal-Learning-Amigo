@@ -130,6 +130,14 @@ class StudyRepositoryImpl @Inject constructor(
         val now = clock.millis()
         val answerJson = json.encodeToString(ListSerializer(String.serializer()), userAnswer.sorted())
         database.withTransaction {
+            if (sessionId != null) {
+                answerDao.findSessionAnswer(sessionId, questionId)?.let { existing ->
+                    check(existing.userAnswerJson == answerJson && existing.isCorrect == isCorrect) {
+                        "该题已在本轮提交，不能更改答案"
+                    }
+                    return@withTransaction
+                }
+            }
             answerDao.insert(
                 AnswerRecordEntity(
                     questionId = questionId,
