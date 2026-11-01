@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -49,7 +50,7 @@ fun HomeScreen(
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         LazyColumn(
             modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(vertical = 16.dp),
+            contentPadding = PaddingValues(top = 20.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
@@ -66,7 +67,8 @@ fun HomeScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    IconButton(onClick = onOpenSettings) {
+                    // Shifts the 48dp touch target outward so the glyph lines up with the cards' right edge.
+                    IconButton(onClick = onOpenSettings, modifier = Modifier.offset(x = 12.dp)) {
                         Icon(Icons.Filled.Settings, contentDescription = "设置")
                     }
                 }
@@ -78,11 +80,11 @@ fun HomeScreen(
                 // Dark scheme primaries are light tints; use the deep containers there so white text stays readable.
                 val darkTheme = LocalDarkTheme.current
                 val gradient = Brush.linearGradient(
+                    // Single-hue indigo ramp; every stop keeps 4.5:1+ contrast with white text.
                     if (darkTheme) {
-                        listOf(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.secondaryContainer)
+                        listOf(MaterialTheme.colorScheme.primaryContainer, Color(0xFF26226E))
                     } else {
-                        // Deeper than the scheme's primary/secondary so white text keeps 4.5:1+ contrast across the gradient.
-                        listOf(Color(0xFF4338CA), Color(0xFF0F766E))
+                        listOf(Color(0xFF4F46E5), Color(0xFF3730A3))
                     }
                 )
                 Box(

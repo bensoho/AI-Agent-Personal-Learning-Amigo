@@ -28,7 +28,7 @@ fun StatisticsScreen(viewModel: StatisticsViewModel = hiltViewModel()) {
     val summary = state.summary
 
     LazyColumn(
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item { Text("学习统计", style = MaterialTheme.typography.headlineMedium) }
