@@ -59,7 +59,7 @@ fun ReviewScreen(
     var expandedId by rememberSaveable { mutableStateOf<String?>(null) }
 
     Column(
-        Modifier.fillMaxSize().padding(top = 16.dp),
+        Modifier.fillMaxSize().padding(top = 20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text("错题与复习", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(horizontal = 16.dp))

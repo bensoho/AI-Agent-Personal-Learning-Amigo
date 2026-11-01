@@ -201,6 +201,9 @@ interface QuestionDao {
 
 @Dao
 interface AnswerRecordDao {
+    @Query("SELECT * FROM answer_records WHERE sessionId = :sessionId AND questionId = :questionId LIMIT 1")
+    suspend fun findSessionAnswer(sessionId: Long, questionId: String): AnswerRecordEntity?
+
     @Insert
     suspend fun insert(record: AnswerRecordEntity): Long
 

@@ -1,10 +1,5 @@
 package com.agentlearning.feature.knowledge
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +17,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -50,10 +47,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -75,54 +71,44 @@ fun KnowledgeScreen(
     viewModel: KnowledgeViewModel = hiltViewModel(),
 ) {
     val courses by viewModel.courses.collectAsStateWithLifecycle()
+    val outline by viewModel.outline.collectAsStateWithLifecycle()
+    val scope by viewModel.scope.collectAsStateWithLifecycle()
     val readCounts by viewModel.readCounts.collectAsStateWithLifecycle()
     val query by viewModel.query.collectAsStateWithLifecycle()
     val filterQuery by viewModel.filterQuery.collectAsStateWithLifecycle()
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
-    var searchVisible by rememberSaveable { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
 
     // Each tab keeps its own scroll position.
     val topicListState = rememberLazyListState()
     val planListState = rememberLazyListState()
     val listState = if (selectedTab == 0) topicListState else planListState
+    var previousSearch by remember { mutableStateOf(filterQuery to scope) }
+    LaunchedEffect(filterQuery, scope) {
+        if (previousSearch != (filterQuery to scope)) {
+            topicListState.scrollToItem(0)
+            planListState.scrollToItem(0)
+            previousSearch = filterQuery to scope
+        }
+    }
+    val onMonthChange: (Int?) -> Unit = {
+        focusManager.clearFocus()
+        viewModel.selectMonth(it)
+    }
+    val onWeekChange: (Int?) -> Unit = {
+        focusManager.clearFocus()
+        viewModel.selectWeek(it)
+    }
 
     Column(Modifier.fillMaxSize().imePadding(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("知识点", style = MaterialTheme.typography.headlineMedium)
-                IconButton(onClick = {
-                    if (searchVisible) {
-                        // Closing also clears the filter so the full list comes back.
-                        viewModel.setQuery("")
-                        focusManager.clearFocus()
-                        searchVisible = false
-                    } else {
-                        searchVisible = true
-                    }
-                }) {
-                    Icon(
-                        if (searchVisible) Icons.Filled.Close else Icons.Filled.Search,
-                        contentDescription = if (searchVisible) "关闭搜索" else "搜索",
-                    )
-                }
-            }
-            AnimatedVisibility(
-                visible = searchVisible,
-                enter = expandVertically() + fadeIn(),
-                exit = shrinkVertically() + fadeOut(),
-            ) {
-                SearchField(
-                    query = query,
-                    onQueryChange = viewModel::setQuery,
-                    placeholder = if (selectedTab == 0) "搜索知识点或关键词" else "搜索学习计划内容",
-                )
-            }
+        Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("知识点", style = MaterialTheme.typography.headlineMedium)
+            SearchField(
+                query = query,
+                onQueryChange = viewModel::setQuery,
+                placeholder = if (selectedTab == 0) "搜索知识点或关键词" else "搜索学习计划内容",
+            )
             TabRow(selectedTabIndex = selectedTab) {
                 knowledgeTabs.forEachIndexed { index, label ->
                     Tab(
@@ -138,27 +124,34 @@ fun KnowledgeScreen(
             if (selectedTab == 1) {
                 StudyPlanList(
                     query = filterQuery,
+                    scope = scope,
+                    onMonthChange = onMonthChange,
+                    onWeekChange = onWeekChange,
                     listState = listState,
                     onDocumentClick = onPlanDocumentClick,
-                    onClearQuery = if (query.isNotBlank()) {
-                        { viewModel.setQuery("") }
-                    } else {
-                        null
-                    },
+                    onResetFilters = viewModel::resetFilters,
                 )
             } else {
-                TopicList(
-                    courses = courses,
-                    readCounts = readCounts,
-                    query = filterQuery,
-                    listState = listState,
-                    onTopicClick = onTopicClick,
-                    onClearQuery = if (query.isNotBlank()) {
-                        { viewModel.setQuery("") }
-                    } else {
-                        null
-                    },
-                )
+                Column {
+                    KnowledgeFilters(
+                        months = outline.map { it.course.monthNumber },
+                        weeks = outline.filter { scope.monthNumber == null || it.course.monthNumber == scope.monthNumber }
+                            .flatMap { course -> course.weeks.map { it.weekNumber } },
+                        scope = scope,
+                        onMonthChange = onMonthChange,
+                        onWeekChange = onWeekChange,
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                    )
+                    TopicList(
+                        courses = courses,
+                        readCounts = readCounts,
+                        query = filterQuery,
+                        hasFilters = scope.isActive,
+                        listState = listState,
+                        onTopicClick = onTopicClick,
+                        onResetFilters = viewModel::resetFilters,
+                    )
+                }
             }
         }
     }
@@ -172,9 +165,7 @@ private fun SearchField(
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
-    val focusRequester = remember { FocusRequester() }
-    // The field only exists while search is open, so focus and the keyboard follow it.
-    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    val focusManager = LocalFocusManager.current
     Surface(
         modifier = modifier.fillMaxWidth().heightIn(min = 48.dp),
         shape = RoundedCornerShape(50),
@@ -194,8 +185,10 @@ private fun SearchField(
             BasicTextField(
                 value = query,
                 onValueChange = onQueryChange,
-                modifier = Modifier.weight(1f).focusRequester(focusRequester),
+                modifier = Modifier.weight(1f),
                 singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
                 textStyle = MaterialTheme.typography.bodyMedium.copy(color = colors.onSurface),
                 cursorBrush = SolidColor(colors.primary),
                 decorationBox = { innerTextField ->
@@ -223,17 +216,18 @@ private fun TopicList(
     courses: List<CourseOutline>,
     readCounts: Map<String, Int>,
     query: String,
+    hasFilters: Boolean,
     listState: LazyListState,
     onTopicClick: (String) -> Unit,
-    onClearQuery: (() -> Unit)?,
+    onResetFilters: () -> Unit,
 ) {
     if (courses.isEmpty()) {
-        val hasQuery = query.isNotBlank()
+        val hasQuery = query.isNotBlank() || hasFilters
         EmptyHint(
-            text = if (hasQuery) "没有匹配的知识点" else "暂无知识点",
+            text = if (hasQuery) "当前筛选下没有匹配的知识点" else "暂无知识点",
             icon = if (hasQuery) Icons.Filled.Search else Icons.Filled.Info,
-            actionText = if (hasQuery) "清除搜索" else null,
-            onAction = onClearQuery,
+            actionText = if (hasQuery) "重置筛选" else null,
+            onAction = onResetFilters,
         )
     } else {
         LazyColumn(
@@ -243,16 +237,18 @@ private fun TopicList(
         ) {
             courses.forEach { course ->
                 item(key = "course-${course.course.id}") {
-                    Text(
+                    SearchResultText(
                         "Month ${course.course.monthNumber} · ${course.course.title}",
+                        query = query,
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.padding(top = 8.dp),
                     )
                 }
                 course.weeks.forEach { week ->
                     item(key = "week-${week.weekNumber}") {
-                        Text(
+                        SearchResultText(
                             "Week %02d  %s".format(week.weekNumber, week.title),
+                            query = query,
                             style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 4.dp),
@@ -262,26 +258,33 @@ private fun TopicList(
                         val topic = progress.topic
                         item(key = "topic-${topic.id}") {
                             AppCard(Modifier.fillMaxWidth(), onClick = { onTopicClick(topic.id) }) {
-                                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    SearchResultText(topic.title, query, style = MaterialTheme.typography.titleMedium)
+                                    topic.description?.let {
+                                        SearchResultText(it, query, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    val excerpt = remember(topic.notes, query) {
+                                        if (query.isNotBlank() && !topic.title.contains(query, ignoreCase = true) &&
+                                            topic.description?.contains(query, ignoreCase = true) != true
+                                        ) topic.notes?.let { searchExcerpt(it, query) } else null
+                                    }
+                                    excerpt?.let {
+                                        SearchResultText(
+                                            it, query, style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
                                     Row(
                                         Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
-                                        Text(topic.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                                        if (topic.notes != null) {
-                                            Pill("笔记")
-                                        } else {
-                                            Pill(
-                                                "整理中",
-                                                container = MaterialTheme.colorScheme.surfaceVariant,
-                                                content = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        }
+                                        Text(
+                                            if (topic.notes != null) "笔记" else "整理中",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
                                         ReadCountPill(readCounts[ReadKeys.topic(topic.id)] ?: 0)
-                                    }
-                                    topic.description?.let {
-                                        Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                 }
                             }

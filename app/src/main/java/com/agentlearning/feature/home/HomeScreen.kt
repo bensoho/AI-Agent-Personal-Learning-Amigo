@@ -8,13 +8,14 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -46,113 +47,112 @@ fun HomeScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val summary = state.summary
 
-    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        LazyColumn(
-            modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            item {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(24.dp),
+    ) {
+        item {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Agent Learning", style = MaterialTheme.typography.headlineMedium)
+                    Text(
+                        "LangChain · LangGraph · LangSmith",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                IconButton(onClick = onOpenSettings) {
+                    Icon(Icons.Filled.Settings, contentDescription = "设置")
+                }
+            }
+        }
+
+        item {
+            val today = summary?.todayAnswers ?: 0
+            val progress = (today.toFloat() / state.dailyGoal).coerceIn(0f, 1f)
+            // Dark scheme primaries are light tints; use the deep containers there so white text stays readable.
+            val darkTheme = LocalDarkTheme.current
+            val gradient = Brush.linearGradient(
+                // Single-hue indigo ramp; every stop keeps 4.5:1+ contrast with white text.
+                if (darkTheme) {
+                    listOf(MaterialTheme.colorScheme.primaryContainer, Color(0xFF26226E))
+                } else {
+                    listOf(Color(0xFF4F46E5), Color(0xFF3730A3))
+                }
+            )
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(MaterialTheme.shapes.large)
+                    .background(gradient)
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+            ) {
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Column {
-                        Text("Agent Learning", style = MaterialTheme.typography.headlineMedium)
+                    Column(Modifier.weight(1f).padding(end = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("今日学习任务", style = MaterialTheme.typography.titleMedium, color = Color.White)
+                        val weekPrefix = summary?.currentWeek?.let { "Week %02d · ".format(it) }.orEmpty()
                         Text(
-                            "LangChain · LangGraph · LangSmith",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            weekPrefix + if (progress >= 1f) "今日目标已达成" else "还差 ${(state.dailyGoal - today).coerceAtLeast(0)} 题",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.White,
                         )
                     }
-                    IconButton(onClick = onOpenSettings) {
-                        Icon(Icons.Filled.Settings, contentDescription = "设置")
+                    Box(contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(
+                            progress = { progress },
+                            modifier = Modifier.size(72.dp),
+                            color = Color.White,
+                            trackColor = Color.White.copy(alpha = 0.3f),
+                            strokeWidth = 7.dp,
+                        )
+                        Text("$today/${state.dailyGoal}", style = MaterialTheme.typography.titleSmall, color = Color.White)
                     }
                 }
-            }
-
-            item {
-                val today = summary?.todayAnswers ?: 0
-                val progress = (today.toFloat() / state.dailyGoal).coerceIn(0f, 1f)
-                // Dark scheme primaries are light tints; use the deep containers there so white text stays readable.
-                val darkTheme = LocalDarkTheme.current
-                val gradient = Brush.linearGradient(
-                    if (darkTheme) {
-                        listOf(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.secondaryContainer)
-                    } else {
-                        // Deeper than the scheme's primary/secondary so white text keeps 4.5:1+ contrast across the gradient.
-                        listOf(Color(0xFF4338CA), Color(0xFF0F766E))
-                    }
-                )
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(MaterialTheme.shapes.large)
-                        .background(gradient)
-                        .padding(20.dp)
+                Button(
+                    onClick = { onStartQuiz(StudyMode.DAILY) },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    shape = MaterialTheme.shapes.medium,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.White,
+                        contentColor = Color(0xFF3730A3),
+                    ),
                 ) {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("今日学习任务", style = MaterialTheme.typography.titleMedium, color = Color.White)
-                            val weekPrefix = summary?.currentWeek?.let { "Week %02d · ".format(it) }.orEmpty()
-                            Text(
-                                weekPrefix + if (progress >= 1f) "今日目标已达成" else "还差 ${(state.dailyGoal - today).coerceAtLeast(0)} 题",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = Color.White,
-                            )
-                        }
-                        Box(contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(
-                                progress = { progress },
-                                modifier = Modifier.size(72.dp),
-                                color = Color.White,
-                                trackColor = Color.White.copy(alpha = 0.3f),
-                                strokeWidth = 7.dp,
-                            )
-                            Text("$today/${state.dailyGoal}", style = MaterialTheme.typography.titleSmall, color = Color.White)
-                        }
-                    }
-                }
-            }
-
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    StatCard("待复习题目", "${summary?.dueCount ?: 0}", Modifier.weight(1f))
-                    StatCard("连续学习", "${summary?.streakDays ?: 0} 天", Modifier.weight(1f))
-                }
-            }
-
-            item {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SectionTitle("最近 7 天完成题数")
-                    DailyBars(state.daily)
+                    Text(if (progress >= 1f) "继续练习" else "开始今日任务")
                 }
             }
         }
 
-        Row(
-            Modifier.fillMaxWidth().padding(bottom = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Button(
-                onClick = { onStartQuiz(StudyMode.DAILY) },
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(14.dp),
-            ) {
-                Text("开始今日任务")
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    StatCard("待复习题目", "${summary?.dueCount ?: 0}", Modifier.weight(1f))
+                    StatCard("连续学习", "${summary?.streakDays ?: 0} 天", Modifier.weight(1f))
+                }
+                OutlinedButton(
+                    onClick = { onStartQuiz(StudyMode.REVIEW_DUE) },
+                    enabled = (summary?.dueCount ?: 0) > 0,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    shape = MaterialTheme.shapes.medium,
+                ) {
+                    Text(if ((summary?.dueCount ?: 0) > 0) "开始今日复习" else "今天暂无待复习题目")
+                }
             }
-            OutlinedButton(
-                onClick = { onStartQuiz(StudyMode.REVIEW_DUE) },
-                enabled = (summary?.dueCount ?: 0) > 0,
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(14.dp),
-            ) {
-                Text("开始今日复习")
+        }
+
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                SectionTitle("最近 7 天完成题数")
+                DailyBars(state.daily)
             }
         }
     }

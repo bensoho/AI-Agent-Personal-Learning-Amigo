@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.add
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -22,7 +23,10 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBarDefaults
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.Text
@@ -122,7 +126,8 @@ private fun AppScaffold() {
         contentWindowInsets = if (showBottomBar) ScaffoldDefaults.contentWindowInsets else WindowInsets(0, 0, 0, 0),
         bottomBar = {
             if (showBottomBar) {
-                NavigationBar {
+                // Five items on a ~350dp phone are narrower than the 64dp indicator, which then touches the screen edge.
+                NavigationBar(windowInsets = NavigationBarDefaults.windowInsets.add(WindowInsets(left = 8.dp, right = 8.dp))) {
                     topLevelDestinations.forEach { top ->
                         NavigationBarItem(
                             selected = destination?.hierarchy?.any { it.route == top.route } == true,
@@ -135,6 +140,11 @@ private fun AppScaffold() {
                             },
                             icon = { Icon(top.icon, contentDescription = top.label) },
                             label = { Text(top.label) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                            ),
                         )
                     }
                 }
@@ -186,7 +196,12 @@ private fun AppScaffold() {
             composable(Routes.REVIEW) {
                 ReviewScreen(onStartQuiz = { navController.navigate(Routes.quiz(it)) })
             }
-            composable(Routes.STATS) { StatisticsScreen() }
+            composable(Routes.STATS) {
+                StatisticsScreen(
+                    onStartQuiz = { navController.navigate(Routes.quiz(it)) },
+                    onPracticeTopic = { navController.navigate(Routes.quiz(StudyMode.TOPIC, it)) },
+                )
+            }
             composable(Routes.SETTINGS) { SettingsScreen(onBack = { navController.popBackStack() }) }
             composable(
                 Routes.KNOWLEDGE_DETAIL,
