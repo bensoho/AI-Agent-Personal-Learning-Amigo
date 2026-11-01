@@ -1,5 +1,7 @@
 package com.agentlearning.feature.knowledge.plan
 
+import com.agentlearning.feature.knowledge.KnowledgeScope
+
 data class StudyPlan(
     val title: String,
     val guides: List<PlanDocument>,
@@ -13,17 +15,21 @@ data class StudyPlan(
 }
 
 /** Keeps guides and weeks whose title or content contains [query]; months without matches are dropped. */
-fun StudyPlan.filter(query: String): StudyPlan {
-            if (query.isBlank()) return this
-            val q = query.trim()
-            return copy(
-                guides = guides.filter { it.matches(q) },
-                months = months.mapNotNull { month ->
-                    val monthHit = month.title.contains(q, ignoreCase = true)
-                    val weeks = if (monthHit) month.weeks else month.weeks.filter { it.document.matches(q) }
-                    if (weeks.isEmpty()) null else month.copy(weeks = weeks)
-                },
-            )
+fun StudyPlan.filter(query: String, scope: KnowledgeScope = KnowledgeScope()): StudyPlan {
+    if (query.isBlank() && !scope.isActive) return this
+    val q = query.trim()
+    return copy(
+        guides = if (scope.isActive) emptyList() else guides.filter { it.matches(q) },
+        months = months.mapNotNull { month ->
+            if (scope.monthNumber != null && month.number != scope.monthNumber) return@mapNotNull null
+            val monthHit = month.title.contains(q, ignoreCase = true)
+            val weeks = month.weeks.filter { week ->
+                (scope.weekNumber == null || week.number == scope.weekNumber) &&
+                    (q.isEmpty() || monthHit || week.document.matches(q))
+            }
+            if (weeks.isEmpty()) null else month.copy(weeks = weeks)
+        },
+    )
 }
 
 data class PlanMonth(

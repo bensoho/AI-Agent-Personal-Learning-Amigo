@@ -1,6 +1,5 @@
 package com.agentlearning.ui.components
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,22 +10,31 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.agentlearning.domain.model.DailyStat
 import com.agentlearning.domain.model.Difficulty
 import com.agentlearning.domain.model.QuestionType
+import java.time.LocalDate
 
 @Composable
 fun AppCard(
@@ -36,20 +44,23 @@ fun AppCard(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val colors = CardDefaults.cardColors(containerColor = containerColor)
-    val border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     if (onClick != null) {
-        Card(onClick = onClick, modifier = modifier, colors = colors, border = border, content = content)
+        Card(onClick = onClick, modifier = modifier, colors = colors, content = content)
     } else {
-        Card(modifier = modifier, colors = colors, border = border, content = content)
+        Card(modifier = modifier, colors = colors, content = content)
     }
 }
 
 @Composable
-fun StatCard(label: String, value: String, modifier: Modifier = Modifier) {
+fun StatCard(label: String, value: String, modifier: Modifier = Modifier, emphasized: Boolean = false) {
     AppCard(modifier) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(value, style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
+            Text(
+                value,
+                style = MaterialTheme.typography.headlineSmall,
+                color = if (emphasized) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            )
         }
     }
 }
@@ -72,10 +83,47 @@ fun SectionTitle(text: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun EmptyHint(text: String, modifier: Modifier = Modifier) {
+fun EmptyHint(
+    text: String,
+    modifier: Modifier = Modifier,
+    icon: ImageVector = Icons.Filled.Info,
+    actionText: String? = null,
+    onAction: (() -> Unit)? = null,
+) {
     Box(modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-        Text(text, style = MaterialTheme.typography.bodyMedium)
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(40.dp),
+            )
+            Text(
+                text,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+            if (actionText != null && onAction != null) {
+                TextButton(onClick = onAction) { Text(actionText) }
+            }
+        }
     }
+}
+
+/** Progress bar shared by every screen: neutral track, no mint gap, no stop dot. */
+@Composable
+fun AppLinearProgress(progress: Float, modifier: Modifier = Modifier) {
+    LinearProgressIndicator(
+        progress = { progress },
+        modifier = modifier,
+        trackColor = MaterialTheme.colorScheme.surfaceVariant,
+        gapSize = 0.dp,
+        drawStopIndicator = {},
+    )
 }
 
 @Composable
@@ -85,22 +133,47 @@ fun DailyBars(
     height: Dp = 140.dp,
     barMaxHeight: Dp = 90.dp,
 ) {
+    if (daily.isEmpty() || daily.all { it.total == 0 }) {
+        Surface(
+            modifier = modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+        ) {
+            Text(
+                "最近 7 天还没有答题记录",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(16.dp),
+            )
+        }
+        return
+    }
     val max = (daily.maxOfOrNull { it.total } ?: 0).coerceAtLeast(1)
+    val today = LocalDate.now()
+    val colors = MaterialTheme.colorScheme
     Row(
         modifier.fillMaxWidth().height(height),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.Bottom,
     ) {
         daily.forEach { day ->
+            val isToday = day.date == today
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Bottom) {
                 Text("${day.total}", style = MaterialTheme.typography.labelSmall)
                 Box(
                     Modifier
                         .width(24.dp)
                         .height((barMaxHeight * (day.total.toFloat() / max)).coerceAtLeast(2.dp))
-                        .background(MaterialTheme.colorScheme.primary)
+                        .background(
+                            color = if (isToday) colors.primary else colors.primary.copy(alpha = 0.4f),
+                            shape = RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp),
+                        )
                 )
-                Text("${day.date.monthValue}/${day.date.dayOfMonth}", style = MaterialTheme.typography.labelSmall)
+                Text(
+                    "${day.date.monthValue}/${day.date.dayOfMonth}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isToday) colors.primary else colors.onSurfaceVariant,
+                )
             }
         }
     }

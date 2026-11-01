@@ -13,6 +13,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import java.time.Clock
+import java.time.LocalDate
 import javax.inject.Inject
 
 data class StatisticsUiState(
@@ -21,12 +23,14 @@ data class StatisticsUiState(
     val daily: List<DailyStat> = emptyList(),
     val weekly: List<WeeklyStat> = emptyList(),
     val courses: List<CourseOutline> = emptyList(),
+    val today: LocalDate = LocalDate.now(),
 )
 
 @HiltViewModel
 class StatisticsViewModel @Inject constructor(
     stats: StatsRepository,
     curriculum: CurriculumRepository,
+    clock: Clock,
 ) : ViewModel() {
 
     val uiState: StateFlow<StatisticsUiState> = combine(
@@ -36,7 +40,7 @@ class StatisticsViewModel @Inject constructor(
         stats.observeWeeklyStats(WEEKS),
         curriculum.observeOutline(),
     ) { summary, wrong, daily, weekly, courses ->
-        StatisticsUiState(summary, wrong, daily, weekly, courses)
+        StatisticsUiState(summary, wrong, daily, weekly, courses, LocalDate.now(clock))
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StatisticsUiState())
 
     private companion object {

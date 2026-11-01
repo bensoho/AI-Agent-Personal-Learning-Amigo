@@ -5,8 +5,10 @@ import com.agentlearning.domain.model.CourseOutline
 import com.agentlearning.domain.model.DailyStat
 import com.agentlearning.domain.model.Question
 import com.agentlearning.domain.model.ReviewFilter
+import com.agentlearning.domain.model.ReviewMeta
 import com.agentlearning.domain.model.StatsSummary
 import com.agentlearning.domain.model.StudyMode
+import com.agentlearning.domain.model.ThemeMode
 import com.agentlearning.domain.model.Topic
 import com.agentlearning.domain.model.WeeklyStat
 import kotlinx.coroutines.flow.Flow
@@ -19,11 +21,15 @@ interface CurriculumRepository {
 
 interface StudyRepository {
     fun observeQuestions(filter: ReviewFilter): Flow<List<Question>>
+    fun observeReviewMeta(): Flow<List<ReviewMeta>>
     suspend fun loadQuizQuestions(mode: StudyMode, topicId: String?, dailyGoal: Int): List<Question>
+
+    /** Loads questions by id, keeping the order of [ids]; used to restore a quiz after process death. */
+    suspend fun loadQuestionsByIds(ids: List<String>): List<Question>
     suspend fun startSession(mode: StudyMode): Long
     suspend fun finishSession(sessionId: Long)
 
-    /** Saves the answer, updates the review schedule and session counters atomically. */
+    /** Saves the answer, schedule and counters atomically; identical retries within a session are idempotent. */
     suspend fun recordAnswer(
         questionId: String,
         sessionId: Long?,
@@ -45,10 +51,12 @@ interface SettingsRepository {
     val bankContentVersion: Flow<Int>
     val fontScale: Flow<Float>
     val soundEnabled: Flow<Boolean>
+    val themeMode: Flow<ThemeMode>
     suspend fun setDailyGoal(value: Int)
     suspend fun setBankContentVersion(value: Int)
     suspend fun setFontScale(value: Float)
     suspend fun setSoundEnabled(value: Boolean)
+    suspend fun setThemeMode(value: ThemeMode)
 }
 
 class BackupException(message: String) : Exception(message)
@@ -65,4 +73,18 @@ interface BackupRepository {
     suspend fun parse(json: String): ParsedBackup
     suspend fun restore(backup: ParsedBackup)
     suspend fun resetUserData()
+}
+
+/** Keys identifying readable content in [ReadingRepository]. */
+object ReadKeys {
+    fun topic(topicId: String) = "topic:$topicId"
+    fun planDocument(documentId: String) = "plan:$documentId"
+}
+
+interface ReadingRepository {
+    /** Read counts keyed by [ReadKeys]; content never read is absent. */
+    fun observeReadCounts(): Flow<Map<String, Int>>
+
+    /** Records one read; persisted on an app-wide scope so it survives the caller being cleared. */
+    fun recordRead(contentKey: String)
 }

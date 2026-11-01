@@ -20,13 +20,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.agentlearning.feature.quiz.components.CodeBlock
 
@@ -93,30 +96,45 @@ private fun MarkdownBlock(block: MdBlock) {
 @Composable
 private fun MarkdownTable(table: MdBlock.Table) {
     val scheme = MaterialTheme.colorScheme
+    val typography = MaterialTheme.typography
     val columns = maxOf(table.header.size, table.rows.maxOfOrNull { it.size } ?: 0)
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    // Same width for every row, sized to the widest cell so columns stay aligned and wrap less.
+    val columnWidths = remember(table, typography, density) {
+        (0 until columns).map { column ->
+            val header = table.header.getOrNull(column)?.let { measurer.measure(it, typography.labelLarge).size.width } ?: 0
+            val body = table.rows.maxOfOrNull { row ->
+                row.getOrNull(column)?.let { measurer.measure(it, typography.bodySmall).size.width } ?: 0
+            } ?: 0
+            with(density) {
+                (maxOf(header, body) + 16.dp.roundToPx()).toDp().coerceIn(96.dp, 240.dp)
+            }
+        }
+    }
     Column(
         Modifier
             .fillMaxWidth()
             .background(scheme.surfaceContainerLow, RoundedCornerShape(8.dp))
             .horizontalScroll(rememberScrollState()),
     ) {
-        TableRow(table.header, columns, MaterialTheme.typography.labelLarge, scheme.primaryContainer)
+        TableRow(table.header, columnWidths, typography.labelLarge, scheme.primaryContainer)
         table.rows.forEach { row ->
             HorizontalDivider(color = scheme.outlineVariant)
-            TableRow(row, columns, MaterialTheme.typography.bodySmall, Color.Transparent)
+            TableRow(row, columnWidths, typography.bodySmall, Color.Transparent)
         }
     }
 }
 
 @Composable
-private fun TableRow(cells: List<String>, columns: Int, style: TextStyle, background: Color) {
+private fun TableRow(cells: List<String>, widths: List<Dp>, style: TextStyle, background: Color) {
     val codeBackground = MaterialTheme.colorScheme.secondaryContainer
     Row(Modifier.background(background)) {
-        repeat(columns) { index ->
+        widths.forEachIndexed { index, width ->
             Text(
                 inlineText(cells.getOrNull(index).orEmpty(), codeBackground),
                 style = style,
-                modifier = Modifier.width(160.dp).padding(8.dp),
+                modifier = Modifier.width(width).padding(8.dp),
             )
         }
     }

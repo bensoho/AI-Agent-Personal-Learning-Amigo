@@ -66,14 +66,13 @@ object MarkdownParser {
                 line.isBlank() -> flushParagraph()
                 pandocTableRule.matches(line) -> {
                     flushParagraph()
-                    val body = mutableListOf<String>()
-                    i++
-                    while (i < lines.size && !pandocTableRule.matches(lines[i])) {
-                        val row = lines[i].trimEnd()
-                        if (!rule.matches(row)) body += row
-                        i++
+                    val table = parsePandocSimpleTable(lines, i)
+                    if (table != null) {
+                        blocks += table.block
+                        i = table.nextIndex
+                        continue
                     }
-                    blocks += MdBlock.Preformatted(body.filter { it.isNotBlank() }.joinToString("\n").trimIndent())
+                    blocks += MdBlock.Divider
                 }
                 rule.matches(line) -> {
                     flushParagraph()
@@ -142,8 +141,101 @@ object MarkdownParser {
         return blocks
     }
 
-    fun spans(text: String): List<MdSpan> {
-        val spans = mutableListOf<MdSpan>()
+    private data class ParsedTable(val block: MdBlock.Table, val nextIndex: Int)
+
+    /**
+     * Pandoc simple tables: a rule, the header, a rule whose dash runs mark the column boundaries,
+     * the body, then a closing rule. Slicing uses display width so CJK cells stay in their columns.
+     */
+    private fun parsePandocSimpleTable(lines: List<String>, start: Int): ParsedTable? {
+        var columnRule = -1
+        for (j in start + 1 until minOf(lines.size, start + 12)) {
+            if (pandocTableRule.matches(lines[j])) {
+                columnRule = j
+                break
+            }
+        }
+        if (columnRule == -1) return null
+
+        val ranges = Regex("-{3,}").findAll(lines[columnRule])
+            .map { it.range.first to it.range.last + 1 }
+            .toList()
+        if (ranges.size < 2) return null
+
+        val header = mutableListOf<String>()
+        for (h in start + 1 until columnRule) {
+            val text = lines[h]
+            if (text.isBlank()) continue
+            val cells = ranges.map { (from, to) -> sliceColumns(text, from, to) }
+            if (header.isEmpty()) {
+                header.addAll(cells)
+            } else {
+                cells.forEachIndexed { index, cell ->
+                    if (cell.isNotBlank()) header[index] = (header[index] + " " + cell).trim()
+                }
+            }
+        }
+        if (header.all { it.isBlank() }) return null
+
+        var end = columnRule + 1
+        while (end < lines.size && !pandocTableRule.matches(lines[end])) end++
+
+        val rows = mutableListOf<MutableList<String>>()
+        var startsNewRow = true
+        for (k in columnRule + 1 until end) {
+            val text = lines[k]
+            if (text.isBlank()) {
+                startsNewRow = true
+                continue
+            }
+            val cells = ranges.map { (from, to) -> sliceColumns(text, from, to) }
+            if (startsNewRow || rows.isEmpty()) {
+                rows += cells.toMutableList()
+                startsNewRow = false
+            } else {
+                val last = rows.last()
+                cells.forEachIndexed { index, cell ->
+                    if (cell.isNotBlank()) last[index] = (last[index] + " " + cell).trim()
+                }
+            }
+        }
+        val body = rows.filter { row -> row.any { it.isNotBlank() } }
+        if (body.isEmpty()) return null
+        return ParsedTable(MdBlock.Table(header, body), if (end < lines.size) end + 1 else end)
+    }
+
+    private fun sliceColumns(line: String, start: Int, end: Int): String {
+        val text = StringBuilder()
+        var column = 0
+        var index = 0
+        while (index < line.length && column < end) {
+            val codePoint = line.codePointAt(index)
+            val width = displayWidth(codePoint)
+            val next = column + width
+            if (column < end && next > start) text.appendCodePoint(codePoint)
+            column = next
+            index += Character.charCount(codePoint)
+        }
+        return text.toString().trim()
+    }
+
+    private fun displayWidth(codePoint: Int): Int = when {
+        codePoint == '\t'.code -> 4
+        codePoint < 0x20 -> 0
+        codePoint in 0x1100..0x115F -> 2
+        codePoint in 0x2E80..0xA4CF -> 2
+        codePoint in 0xAC00..0xD7A3 -> 2
+        codePoint in 0xF900..0xFAFF -> 2
+        codePoint in 0xFE10..0xFE19 -> 2
+        codePoint in 0xFE30..0xFE6F -> 2
+        codePoint in 0xFF00..0xFF60 -> 2
+        codePoint in 0xFFE0..0xFFE6 -> 2
+        codePoint in 0x1F300..0x1FAFF -> 2
+        codePoint in 0x20000..0x3FFFD -> 2
+        else -> 1
+    }
+
+    fun spans(text: String): List<MdSpan> {        val spans = mutableListOf<MdSpan>()
         var last = 0
         for (match in inline.findAll(text)) {
             if (match.range.first > last) spans += MdSpan.Plain(text.substring(last, match.range.first))

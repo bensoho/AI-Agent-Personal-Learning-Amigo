@@ -7,8 +7,10 @@ import com.agentlearning.domain.model.ProgressCalculator
 import com.agentlearning.domain.model.StatsSummary
 import com.agentlearning.domain.model.WeeklyStat
 import com.agentlearning.domain.repository.StatsRepository
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import java.time.Clock
 import java.time.LocalDate
@@ -25,12 +27,14 @@ class StatsRepositoryImpl @Inject constructor(
 
     private val zone: ZoneId get() = clock.zone
 
-    override fun observeSummary(): Flow<StatsSummary> {
-        val today = LocalDate.now(clock)
+    // Date-bound queries are rebuilt at midnight, otherwise "today" and "due" would stay frozen
+    // at the values captured when the screen subscribed.
+    @OptIn(ExperimentalCoroutinesApi::class)
+    override fun observeSummary(): Flow<StatsSummary> = clock.dayChanges().flatMapLatest { today ->
         val totals = combine(answerDao.observeTotal(), answerDao.observeCorrect()) { total, correct ->
             total to correct
         }
-        return combine(
+        combine(
             totals,
             answerDao.observeCountSince(startOfDayMillis(today)),
             answerDao.observeStudyDays(),
@@ -50,10 +54,10 @@ class StatsRepositoryImpl @Inject constructor(
 
     override fun observeWrongCount(): Flow<Int> = questionDao.observeRecentWrongCount()
 
-    override fun observeDailyStats(days: Int): Flow<List<DailyStat>> {
-        val today = LocalDate.now(clock)
+    @OptIn(ExperimentalCoroutinesApi::class)
+    override fun observeDailyStats(days: Int): Flow<List<DailyStat>> = clock.dayChanges().flatMapLatest { today ->
         val start = today.minusDays((days - 1).toLong())
-        return answerDao.observeDailyStats(startOfDayMillis(start)).map { rows ->
+        answerDao.observeDailyStats(startOfDayMillis(start)).map { rows ->
             val byDay = rows.associateBy { LocalDate.parse(it.day) }
             (0 until days).map { offset ->
                 val date = start.plusDays(offset.toLong())

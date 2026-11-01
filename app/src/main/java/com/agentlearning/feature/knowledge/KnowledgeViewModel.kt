@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.agentlearning.domain.model.CourseOutline
 import com.agentlearning.domain.repository.CurriculumRepository
+import com.agentlearning.domain.repository.ReadingRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
@@ -22,10 +23,18 @@ import javax.inject.Inject
 @HiltViewModel
 class KnowledgeViewModel @Inject constructor(
     repository: CurriculumRepository,
+    readingRepository: ReadingRepository,
 ) : ViewModel() {
+
+    val readCounts: StateFlow<Map<String, Int>> = readingRepository.observeReadCounts()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
+    private val _scope = MutableStateFlow(KnowledgeScope())
+    val scope: StateFlow<KnowledgeScope> = _scope.asStateFlow()
+    val outline: StateFlow<List<CourseOutline>> = repository.observeOutline()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     // Debounced so a keystroke does not rescan every topic's notes on the main thread.
     @OptIn(FlowPreview::class)
@@ -36,8 +45,8 @@ class KnowledgeViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
 
     val courses: StateFlow<List<CourseOutline>> =
-        combine(repository.observeOutline(), filterQuery) { outline, query ->
-            filter(outline, query)
+        combine(outline, filterQuery, scope) { outline, query, scope ->
+            filterKnowledge(outline, query, scope)
         }
             .flowOn(Dispatchers.Default)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -46,18 +55,16 @@ class KnowledgeViewModel @Inject constructor(
         _query.value = value
     }
 
-    private fun filter(outline: List<CourseOutline>, query: String): List<CourseOutline> {
-        if (query.isEmpty()) return outline
-        return outline.mapNotNull { course ->
-            val weeks = course.weeks.mapNotNull { week ->
-                val topics = week.topics.filter { progress ->
-                    val topic = progress.topic
-                    listOfNotNull(topic.title, topic.description, topic.notes)
-                        .any { it.contains(query, ignoreCase = true) }
-                }
-                if (topics.isEmpty()) null else week.copy(topics = topics)
-            }
-            if (weeks.isEmpty()) null else course.copy(weeks = weeks)
-        }
+    fun selectMonth(monthNumber: Int?) {
+        _scope.value = KnowledgeScope(monthNumber = monthNumber)
+    }
+
+    fun selectWeek(weekNumber: Int?) {
+        _scope.value = _scope.value.copy(weekNumber = weekNumber)
+    }
+
+    fun resetFilters() {
+        _query.value = ""
+        _scope.value = KnowledgeScope()
     }
 }

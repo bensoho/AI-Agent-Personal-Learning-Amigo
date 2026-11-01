@@ -3,6 +3,7 @@ package com.agentlearning.navigation
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.agentlearning.data.importer.QuestionBankImporter
+import com.agentlearning.domain.model.ThemeMode
 import com.agentlearning.domain.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,6 +28,9 @@ class MainViewModel @Inject constructor(
 
     val fontScale: StateFlow<Float> = settings.fontScale
         .stateIn(viewModelScope, SharingStarted.Eagerly, 1f)
+
+    val themeMode: StateFlow<ThemeMode> = settings.themeMode
+        .stateIn(viewModelScope, SharingStarted.Eagerly, ThemeMode.SYSTEM)
 
     private val _state = MutableStateFlow<InitState>(InitState.Loading)
     val state: StateFlow<InitState> = _state.asStateFlow()

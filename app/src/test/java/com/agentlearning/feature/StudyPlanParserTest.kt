@@ -5,6 +5,7 @@ import com.agentlearning.feature.knowledge.plan.MdBlock
 import com.agentlearning.feature.knowledge.plan.MdSpan
 import com.agentlearning.feature.knowledge.plan.StudyPlanParser
 import com.agentlearning.feature.knowledge.plan.filter
+import com.agentlearning.feature.knowledge.KnowledgeScope
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -116,6 +117,48 @@ class StudyPlanParserTest {
     fun filter_keepsOnlyMatchingWeeks() {
         val filtered = StudyPlanParser.parse(sample).filter("讲义内容")
         assertEquals(listOf(1), filtered.months.single().weeks.map { it.number })
+    }
+
+    @Test
+    fun filter_combinesMonthWeekAndQueryWithoutGuides() {
+        val plan = StudyPlanParser.parse(sample)
+        val filtered = plan.filter("Token", KnowledgeScope(monthNumber = 1, weekNumber = 1))
+        assertTrue(filtered.guides.isEmpty())
+        assertEquals(listOf(1), filtered.months.map { it.number })
+        assertEquals(listOf(1), filtered.months.single().weeks.map { it.number })
+        assertTrue(plan.filter("Token", KnowledgeScope(monthNumber = 2)).months.isEmpty())
+        assertTrue(plan.filter("", KnowledgeScope(monthNumber = 1, weekNumber = 3)).months.isEmpty())
+    }
+
+    @Test
+    fun filter_monthSelectionAndWeekSelectionWorkWithBlankQuery() {
+        val plan = StudyPlanParser.parse(sample)
+        assertEquals(listOf(1, 2), plan.filter("", KnowledgeScope(monthNumber = 1)).months.single().weeks.map { it.number })
+        assertEquals(listOf(3), plan.filter("", KnowledgeScope(weekNumber = 3)).months.single().weeks.map { it.number })
+        assertEquals(plan, plan.filter(" "))
+    }
+
+    @Test
+    fun filter_monthTitleSearchKeepsOnlySelectedWeek() {
+        val result = StudyPlanParser.parse(sample).filter("LangChain", KnowledgeScope(weekNumber = 2))
+        assertEquals(listOf(2), result.months.single().weeks.map { it.number })
+    }
+
+    @Test
+    fun markdown_parsesPandocSimpleTableWithCjkColumns() {
+        val markdown = listOf(
+            "  -------- ------ --------------------",
+            "  阶段     周次   主题",
+            "  -------- ------ --------------------",
+            "  第1个月  1--4   LangChain 基础",
+            "                  RAG",
+            "  -------- ------ --------------------",
+        ).joinToString("\n")
+
+        val table = MarkdownParser.parse(markdown).single() as MdBlock.Table
+
+        assertEquals(listOf("阶段", "周次", "主题"), table.header)
+        assertEquals(listOf("第1个月", "1--4", "LangChain 基础 RAG"), table.rows.single())
     }
 
     @Test

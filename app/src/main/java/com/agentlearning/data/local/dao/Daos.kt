@@ -4,10 +4,12 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Upsert
 import com.agentlearning.data.local.entity.AnswerRecordEntity
 import com.agentlearning.data.local.entity.CourseEntity
 import com.agentlearning.data.local.entity.QuestionEntity
+import com.agentlearning.data.local.entity.ReadCountEntity
 import com.agentlearning.data.local.entity.ReviewRecordEntity
 import com.agentlearning.data.local.entity.StudySessionEntity
 import com.agentlearning.data.local.entity.TopicEntity
@@ -25,6 +27,13 @@ data class TopicStatRow(
 data class DailyStatRow(val day: String, val total: Int, val correct: Int)
 
 data class WeeklyStatRow(val week: String, val total: Int, val correct: Int)
+
+data class ReviewMetaRow(
+    val questionId: String,
+    val wrongCount: Int,
+    val nextReviewAt: Long?,
+    val status: String?,
+)
 
 @Dao
 interface CourseDao {
@@ -60,6 +69,9 @@ interface QuestionDao {
 
     @Query("SELECT id FROM questions")
     suspend fun getAllIds(): List<String>
+
+    @Query("SELECT * FROM questions WHERE id IN (:ids)")
+    suspend fun getByIds(ids: List<String>): List<QuestionEntity>
 
     @Query("SELECT * FROM questions WHERE topicId = :topicId AND isActive = 1 ORDER BY id")
     fun observeByTopic(topicId: String): Flow<List<QuestionEntity>>
@@ -171,10 +183,27 @@ interface QuestionDao {
         """
     )
     fun observeTopicStats(): Flow<List<TopicStatRow>>
+
+    // One row per active question; used to decorate question lists with review state.
+    @Query(
+        """
+        SELECT q.id AS questionId,
+            (SELECT COUNT(*) FROM answer_records a WHERE a.questionId = q.id AND a.isCorrect = 0) AS wrongCount,
+            r.nextReviewAt AS nextReviewAt,
+            r.status AS status
+        FROM questions q
+        LEFT JOIN review_records r ON r.questionId = q.id
+        WHERE q.isActive = 1
+        """
+    )
+    fun observeReviewMeta(): Flow<List<ReviewMetaRow>>
 }
 
 @Dao
 interface AnswerRecordDao {
+    @Query("SELECT * FROM answer_records WHERE sessionId = :sessionId AND questionId = :questionId LIMIT 1")
+    suspend fun findSessionAnswer(sessionId: Long, questionId: String): AnswerRecordEntity?
+
     @Insert
     suspend fun insert(record: AnswerRecordEntity): Long
 
@@ -241,6 +270,32 @@ interface ReviewRecordDao {
     suspend fun getAll(): List<ReviewRecordEntity>
 
     @Query("DELETE FROM review_records")
+    suspend fun deleteAll()
+}
+
+@Dao
+interface ReadCountDao {
+    @Query("SELECT * FROM read_counts")
+    fun observeAll(): Flow<List<ReadCountEntity>>
+
+    @Query("UPDATE read_counts SET count = count + 1, lastReadAt = :readAt WHERE contentKey = :contentKey")
+    suspend fun increment(contentKey: String, readAt: Long): Int
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insert(item: ReadCountEntity)
+
+    @Transaction
+    suspend fun recordRead(contentKey: String, readAt: Long) {
+        if (increment(contentKey, readAt) == 0) insert(ReadCountEntity(contentKey, count = 1, lastReadAt = readAt))
+    }
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertAll(items: List<ReadCountEntity>)
+
+    @Query("SELECT * FROM read_counts ORDER BY contentKey")
+    suspend fun getAll(): List<ReadCountEntity>
+
+    @Query("DELETE FROM read_counts")
     suspend fun deleteAll()
 }
 

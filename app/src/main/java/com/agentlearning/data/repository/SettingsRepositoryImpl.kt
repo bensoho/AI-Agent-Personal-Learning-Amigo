@@ -5,7 +5,9 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.agentlearning.domain.model.ThemeMode
 import com.agentlearning.domain.repository.SettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -30,6 +32,10 @@ class SettingsRepositoryImpl @Inject constructor(
 
     override val soundEnabled: Flow<Boolean> = store.data.map { it[SOUND_ENABLED] ?: true }
 
+    override val themeMode: Flow<ThemeMode> = store.data.map { prefs ->
+        prefs[THEME_MODE]?.let { name -> ThemeMode.entries.firstOrNull { it.name == name } } ?: ThemeMode.SYSTEM
+    }
+
     override suspend fun setDailyGoal(value: Int) {
         store.edit { it[DAILY_GOAL] = value.coerceIn(MIN_DAILY_GOAL, MAX_DAILY_GOAL) }
     }
@@ -46,6 +52,10 @@ class SettingsRepositoryImpl @Inject constructor(
         store.edit { it[SOUND_ENABLED] = value }
     }
 
+    override suspend fun setThemeMode(value: ThemeMode) {
+        store.edit { it[THEME_MODE] = value.name }
+    }
+
     companion object {
         const val DEFAULT_DAILY_GOAL = 10
         const val MIN_DAILY_GOAL = 5
@@ -57,5 +67,6 @@ class SettingsRepositoryImpl @Inject constructor(
         private val BANK_VERSION = intPreferencesKey("bank_content_version")
         private val FONT_SCALE = floatPreferencesKey("font_scale")
         private val SOUND_ENABLED = booleanPreferencesKey("sound_enabled")
+        private val THEME_MODE = stringPreferencesKey("theme_mode")
     }
 }

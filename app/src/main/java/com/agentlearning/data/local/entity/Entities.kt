@@ -111,6 +111,15 @@ data class AnswerRecordEntity(
     val answeredAt: Long,
 )
 
+/** How many times a piece of reading content was read; [contentKey] is built by ReadKeys. */
+@Serializable
+@Entity(tableName = "read_counts")
+data class ReadCountEntity(
+    @PrimaryKey val contentKey: String,
+    val count: Int,
+    val lastReadAt: Long,
+)
+
 @Serializable
 @Entity(
     tableName = "review_records",

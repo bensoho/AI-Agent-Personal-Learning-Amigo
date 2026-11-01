@@ -8,6 +8,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
@@ -81,13 +82,21 @@ private val AppShapes = Shapes(
     large = RoundedCornerShape(20.dp),
 )
 
+/** Whether the app is currently drawn with the dark scheme; follows the in-app theme setting, not just the system. */
+val LocalDarkTheme = staticCompositionLocalOf { false }
+
 /** [fontScale] multiplies the system font scale, so the in-app setting stacks with the phone's setting. */
 @Composable
-fun AgentLearningTheme(fontScale: Float = 1f, content: @Composable () -> Unit) {
-    val colors = if (isSystemInDarkTheme()) DarkColors else LightColors
+fun AgentLearningTheme(
+    darkTheme: Boolean = isSystemInDarkTheme(),
+    fontScale: Float = 1f,
+    content: @Composable () -> Unit,
+) {
+    val colors = if (darkTheme) DarkColors else LightColors
     val density = LocalDensity.current
     CompositionLocalProvider(
-        LocalDensity provides Density(density.density, density.fontScale * fontScale)
+        LocalDensity provides Density(density.density, density.fontScale * fontScale),
+        LocalDarkTheme provides darkTheme,
     ) {
         MaterialTheme(
             colorScheme = colors,
