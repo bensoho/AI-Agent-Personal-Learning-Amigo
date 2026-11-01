@@ -6,6 +6,7 @@ import com.agentlearning.feature.knowledge.plan.MdSpan
 import com.agentlearning.feature.knowledge.plan.StudyPlanParser
 import com.agentlearning.feature.knowledge.plan.filter
 import com.agentlearning.feature.knowledge.KnowledgeScope
+import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -159,6 +160,66 @@ class StudyPlanParserTest {
 
         assertEquals(listOf("阶段", "周次", "主题"), table.header)
         assertEquals(listOf("第1个月", "1--4", "LangChain 基础 RAG"), table.rows.single())
+    }
+
+    @Test
+    fun bundledResources_rendersListsTablesLinksAndCodeAsSeparateBlocks() {
+        val asset = File("src/main/assets/docs/study_plan.md").readText(Charsets.UTF_8)
+        val source = File("../LangChain_LangGraph_LangSmith_4个月学习计划.md").readText(Charsets.UTF_8)
+        assertEquals(source, asset)
+        val resources = StudyPlanParser.parse(asset).document(StudyPlanParser.RESOURCES_ID)!!
+        val blocks = MarkdownParser.parse(resources.markdown)
+
+        fun section(title: String): List<MdBlock> {
+            val start = blocks.indexOf(MdBlock.Heading(2, title))
+            assertTrue("Missing section: $title", start >= 0)
+            return blocks.drop(start + 1).takeWhile { it !is MdBlock.Heading }
+        }
+
+        assertEquals(
+            listOf("State 如何变化？", "Node 为什么这样设计？", "Graph 如何决定下一步？",
+                "Agent 如何判断任务是否完成？", "执行失败后如何恢复？"),
+            section("1. 不要只学习 API，要理解 Agent 底层原理")
+                .filterIsInstance<MdBlock.ListItem>().map { it.text },
+        )
+        assertEquals(
+            listOf("回答是否准确。", "是否调用正确的工具。", "是否检索到相关内容。",
+                "是否遵循业务规则。", "是否出现幻觉。", "是否在合理成本和时间内完成任务。"),
+            section("4. 重视 LangSmith Evaluation").filterIsInstance<MdBlock.ListItem>().map { it.text },
+        )
+        assertEquals(
+            MdBlock.Table(
+                listOf("学习活动", "时间占比"),
+                listOf(listOf("理论学习", "30%"), listOf("编码实战", "60%"), listOf("复盘总结", "10%")),
+            ),
+            section("2. 建议时间分配").filterIsInstance<MdBlock.Table>().single(),
+        )
+        assertEquals(
+            MdBlock.Table(
+                listOf("传统软件工程", "AI Agent 工程"),
+                listOf(
+                    listOf("Unit Testing", "Node / Tool Testing"),
+                    listOf("Integration Testing", "Agent Workflow Testing"),
+                    listOf("Regression Testing", "LLM Evaluation"),
+                    listOf("Code Coverage", "Evaluation Dataset Coverage"),
+                    listOf("CI Quality Gate", "AI Quality Gate"),
+                    listOf("Application Logging", "LangSmith Tracing"),
+                ),
+            ),
+            section("4. 重视 LangSmith Evaluation").filterIsInstance<MdBlock.Table>().single(),
+        )
+        assertEquals(2, blocks.filterIsInstance<MdBlock.Table>().size)
+        assertEquals(4, section("5. 不要过早陷入 Multi-Agent").filterIsInstance<MdBlock.ListItem>().size)
+        assertEquals(16, blocks.filterIsInstance<MdBlock.ListItem>().count { it.text.startsWith("[ ] 第") })
+        val resourceLinks = blocks.filterIsInstance<MdBlock.ListItem>().filter { it.text.contains("https://") }
+        assertEquals(6, resourceLinks.size)
+        assertEquals(listOf("1.", "2.", "3.", "4.", "5.", "6."), resourceLinks.map { it.marker })
+        assertTrue(resourceLinks.all { it.text.contains("\nhttps://") && !it.text.contains("\\") })
+        assertEquals(listOf("bash", "text"), blocks.filterIsInstance<MdBlock.Code>().map { it.language })
+        assertTrue(section("开发环境建议").filterIsInstance<MdBlock.Code>().single().code.contains("uv add pytest"))
+        assertTrue(section("3. 从第一周开始使用 GitHub").filterIsInstance<MdBlock.Code>()
+            .single().code.contains("    └── deployment/"))
+        assertTrue(blocks.filterIsInstance<MdBlock.Paragraph>().none { it.text.contains(" - ") })
     }
 
     @Test
