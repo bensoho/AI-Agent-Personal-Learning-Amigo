@@ -1,5 +1,6 @@
 package com.agentlearning.feature.quiz.components
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
@@ -36,18 +38,20 @@ fun ChoiceOptions(
         question.options.forEachIndexed { index, option ->
             val isSelected = option.id in selected
             val isCorrect = option.id in question.correctAnswer
-            val container = when {
+            val targetContainer = when {
                 submitted && isCorrect -> MaterialTheme.colorScheme.secondaryContainer
                 submitted && isSelected -> MaterialTheme.colorScheme.errorContainer
                 isSelected -> MaterialTheme.colorScheme.primaryContainer
                 else -> MaterialTheme.colorScheme.surfaceContainerLow
             }
-            val borderColor = when {
+            val targetBorder = when {
                 submitted && isCorrect -> MaterialTheme.colorScheme.secondary
                 submitted && isSelected -> MaterialTheme.colorScheme.error
                 isSelected -> MaterialTheme.colorScheme.primary
                 else -> MaterialTheme.colorScheme.outlineVariant
             }
+            val container by animateColorAsState(targetContainer, label = "optionContainer")
+            val borderColor by animateColorAsState(targetBorder, label = "optionBorder")
             Surface(
                 color = container,
                 shape = MaterialTheme.shapes.medium,

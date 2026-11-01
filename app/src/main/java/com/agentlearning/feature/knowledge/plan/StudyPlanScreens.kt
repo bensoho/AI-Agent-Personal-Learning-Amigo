@@ -1,5 +1,6 @@
 package com.agentlearning.feature.knowledge.plan
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -7,24 +8,37 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -36,9 +50,11 @@ import com.agentlearning.domain.repository.ReadKeys
 import com.agentlearning.feature.knowledge.ReadCountPill
 import com.agentlearning.feature.knowledge.TrackReadingTime
 import com.agentlearning.ui.components.AppCard
+import com.agentlearning.ui.components.AppLinearProgress
 import com.agentlearning.ui.components.EmptyHint
 import com.agentlearning.ui.components.Pill
 import com.agentlearning.ui.components.SpeechActionIcon
+import kotlinx.coroutines.launch
 
 /** Content of the "学习计划" tab: the bundled plan grouped by month and week. */
 @Composable
@@ -46,6 +62,7 @@ fun StudyPlanList(
     query: String,
     listState: LazyListState,
     onDocumentClick: (String) -> Unit,
+    onClearQuery: (() -> Unit)? = null,
     viewModel: StudyPlanViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(query) { viewModel.setQuery(query) }
@@ -58,7 +75,13 @@ fun StudyPlanList(
         is PlanLoadState.Error -> EmptyHint(s.message)
         is PlanLoadState.Ready -> {
             if (s.value.months.isEmpty() && s.value.guides.isEmpty()) {
-                EmptyHint(if (query.isBlank()) "暂无学习计划" else "没有匹配的学习内容")
+                val hasQuery = query.isNotBlank()
+                EmptyHint(
+                    text = if (hasQuery) "没有匹配的学习内容" else "暂无学习计划",
+                    icon = if (hasQuery) Icons.Filled.Search else Icons.Filled.Info,
+                    actionText = if (hasQuery) "清除搜索" else null,
+                    onAction = onClearQuery,
+                )
             } else {
                 StudyPlanContent(s.value, readCounts, listState, onDocumentClick)
             }
@@ -146,6 +169,8 @@ private fun PlanCard(title: String, subtitle: String, pill: String?, readCount: 
     }
 }
 
+private data class TocEntry(val index: Int, val level: Int, val title: String)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StudyPlanDetailScreen(
@@ -156,28 +181,70 @@ fun StudyPlanDetailScreen(
     val document = (state as? PlanLoadState.Ready)?.value
     TrackReadingTime(onResume = viewModel::onReadingResumed, onPause = viewModel::onReadingPaused)
 
+    val blocks = remember(document?.markdown) {
+        document?.markdown?.let(MarkdownParser::parse).orEmpty()
+    }
+    val headings = remember(blocks) {
+        blocks.mapIndexedNotNull { index, block ->
+            val heading = block as? MdBlock.Heading ?: return@mapIndexedNotNull null
+            if (heading.level > 3) return@mapIndexedNotNull null
+            // Item 0 is the subtitle pill, so block i is rendered at item i + 1.
+            TocEntry(index = index + 1, level = heading.level, title = heading.text)
+        }
+    }
+    val listState = rememberLazyListState()
+    val readProgress by remember {
+        derivedStateOf {
+            val info = listState.layoutInfo
+            val total = info.totalItemsCount
+            val first = info.visibleItemsInfo.firstOrNull()
+            if (total <= 1 || first == null) {
+                0f
+            } else {
+                // First visible item plus how far it has scrolled past the top, so the bar starts at 0.
+                val within = if (first.size == 0) 0f else (-first.offset.toFloat() / first.size).coerceIn(0f, 1f)
+                ((first.index + within) / (total - 1)).coerceIn(0f, 1f)
+            }
+        }
+    }
+    var showToc by rememberSaveable { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        document?.title.orEmpty(),
-                        style = MaterialTheme.typography.titleLarge,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+            Column {
+                TopAppBar(
+                    title = {
+                        Text(
+                            document?.title.orEmpty(),
+                            style = MaterialTheme.typography.titleLarge,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        }
+                    },
+                    actions = {
+                        if (headings.isNotEmpty()) {
+                            IconButton(onClick = { showToc = true }) {
+                                Icon(Icons.AutoMirrored.Filled.List, contentDescription = "目录")
+                            }
+                        }
+                        document?.let {
+                            SpeechActionIcon("${it.title}\n${it.subtitle}\n${it.markdown}")
+                        }
+                    },
+                )
+                if (document != null) {
+                    AppLinearProgress(
+                        progress = readProgress,
+                        modifier = Modifier.fillMaxWidth().height(3.dp),
                     )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
-                actions = {
-                    document?.let {
-                        SpeechActionIcon("${it.title}\n${it.subtitle}\n${it.markdown}")
-                    }
-                },
-            )
+                }
+            }
         },
     ) { padding ->
         when (val s = state) {
@@ -186,14 +253,44 @@ fun StudyPlanDetailScreen(
             }
             is PlanLoadState.Error -> EmptyHint(s.message, Modifier.padding(padding))
             is PlanLoadState.Ready -> SelectionContainer {
-                val blocks = remember(s.value.markdown) { MarkdownParser.parse(s.value.markdown) }
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier.fillMaxSize().padding(padding),
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     item(key = "subtitle") { Pill(s.value.subtitle) }
                     markdownItems(blocks)
+                }
+            }
+        }
+    }
+
+    if (showToc) {
+        ModalBottomSheet(onDismissRequest = { showToc = false }) {
+            Column(
+                Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = 24.dp),
+            ) {
+                Text(
+                    "目录",
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
+                )
+                headings.forEach { entry ->
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .clickable {
+                                showToc = false
+                                scope.launch { listState.animateScrollToItem(entry.index) }
+                            }
+                            .padding(horizontal = 24.dp, vertical = 12.dp),
+                    ) {
+                        Text(
+                            entry.title,
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.padding(start = ((entry.level - 1) * 12).dp),
+                        )
+                    }
                 }
             }
         }

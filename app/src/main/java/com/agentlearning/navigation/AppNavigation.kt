@@ -1,16 +1,22 @@
 package com.agentlearning.navigation
 
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -25,6 +31,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -75,10 +82,12 @@ private data class TopLevelDestination(val route: String, val label: String, val
 private val topLevelDestinations = listOf(
     TopLevelDestination(Routes.HOME, "首页", Icons.Filled.Home),
     TopLevelDestination(Routes.CURRICULUM, "课程", Icons.AutoMirrored.Filled.List),
-    TopLevelDestination(Routes.KNOWLEDGE, "知识点", Icons.Filled.Info),
+    TopLevelDestination(Routes.KNOWLEDGE, "知识点", Icons.Filled.Create),
     TopLevelDestination(Routes.REVIEW, "复习", Icons.Filled.Refresh),
     TopLevelDestination(Routes.STATS, "统计", Icons.Filled.DateRange),
 )
+
+private fun isTopLevel(route: String?): Boolean = topLevelDestinations.any { it.route == route }
 
 @Composable
 fun AppRoot(viewModel: MainViewModel = hiltViewModel()) {
@@ -106,6 +115,8 @@ private fun AppScaffold() {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val destination = backStackEntry?.destination
     val showBottomBar = topLevelDestinations.any { top -> destination?.hierarchy?.any { it.route == top.route } == true }
+    // Keeps reading lines comfortable on tablets; phones are narrower than the cap so nothing changes.
+    val wideScreenInset = ((LocalConfiguration.current.screenWidthDp.dp - 720.dp) / 2).coerceAtLeast(0.dp)
 
     Scaffold(
         contentWindowInsets = if (showBottomBar) ScaffoldDefaults.contentWindowInsets else WindowInsets(0, 0, 0, 0),
@@ -133,7 +144,23 @@ private fun AppScaffold() {
         NavHost(
             navController = navController,
             startDestination = Routes.HOME,
-            modifier = Modifier.padding(padding),
+            modifier = Modifier
+                .padding(padding)
+                .consumeWindowInsets(padding)
+                .padding(horizontal = wideScreenInset),
+            // Tabs cross-fade; detail pages slide in so the hierarchy is visible.
+            enterTransition = {
+                if (isTopLevel(initialState.destination.route) && isTopLevel(targetState.destination.route)) {
+                    fadeIn(tween(200))
+                } else {
+                    slideInHorizontally(tween(260)) { it / 4 } + fadeIn(tween(200))
+                }
+            },
+            exitTransition = { fadeOut(tween(180)) },
+            popEnterTransition = { fadeIn(tween(200)) },
+            popExitTransition = {
+                slideOutHorizontally(tween(220)) { it / 4 } + fadeOut(tween(180))
+            },
         ) {
             composable(Routes.HOME) {
                 HomeScreen(

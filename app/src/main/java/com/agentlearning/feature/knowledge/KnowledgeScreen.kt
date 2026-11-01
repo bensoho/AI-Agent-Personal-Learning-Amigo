@@ -5,7 +5,6 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -27,6 +27,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -44,15 +45,15 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -80,44 +81,37 @@ fun KnowledgeScreen(
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
     var searchVisible by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(query) { if (query.isNotEmpty()) searchVisible = true }
+    val focusManager = LocalFocusManager.current
 
     // Each tab keeps its own scroll position.
     val topicListState = rememberLazyListState()
     val planListState = rememberLazyListState()
     val listState = if (selectedTab == 0) topicListState else planListState
-    val latestQuery by rememberUpdatedState(query)
-    val revealThreshold = with(LocalDensity.current) { 56.dp.toPx() }
-    val pullToReveal = Modifier.pointerInput(listState, revealThreshold) {
-        awaitEachGesture {
-            var pull = 0f
-            while (true) {
-                val event = awaitPointerEvent(PointerEventPass.Initial)
-                val change = event.changes.firstOrNull() ?: break
-                if (!change.pressed) break
-                val dy = change.position.y - change.previousPosition.y
-                when {
-                    dy > 0f && !listState.canScrollBackward -> {
-                        if (!searchVisible) {
-                            pull += dy
-                            if (pull >= revealThreshold) {
-                                searchVisible = true
-                                pull = 0f
-                            }
-                        }
+
+    Column(Modifier.fillMaxSize().imePadding(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("知识点", style = MaterialTheme.typography.headlineMedium)
+                IconButton(onClick = {
+                    if (searchVisible) {
+                        // Closing also clears the filter so the full list comes back.
+                        viewModel.setQuery("")
+                        focusManager.clearFocus()
+                        searchVisible = false
+                    } else {
+                        searchVisible = true
                     }
-                    dy < 0f -> {
-                        pull = 0f
-                        if (searchVisible && latestQuery.isBlank()) searchVisible = false
-                    }
+                }) {
+                    Icon(
+                        if (searchVisible) Icons.Filled.Close else Icons.Filled.Search,
+                        contentDescription = if (searchVisible) "关闭搜索" else "搜索",
+                    )
                 }
             }
-        }
-    }
-
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("知识点", style = MaterialTheme.typography.headlineMedium)
             AnimatedVisibility(
                 visible = searchVisible,
                 enter = expandVertically() + fadeIn(),
@@ -140,12 +134,17 @@ fun KnowledgeScreen(
             }
         }
 
-        Box(Modifier.weight(1f).then(pullToReveal)) {
+        Box(Modifier.weight(1f)) {
             if (selectedTab == 1) {
                 StudyPlanList(
                     query = filterQuery,
                     listState = listState,
                     onDocumentClick = onPlanDocumentClick,
+                    onClearQuery = if (query.isNotBlank()) {
+                        { viewModel.setQuery("") }
+                    } else {
+                        null
+                    },
                 )
             } else {
                 TopicList(
@@ -154,6 +153,11 @@ fun KnowledgeScreen(
                     query = filterQuery,
                     listState = listState,
                     onTopicClick = onTopicClick,
+                    onClearQuery = if (query.isNotBlank()) {
+                        { viewModel.setQuery("") }
+                    } else {
+                        null
+                    },
                 )
             }
         }
@@ -168,6 +172,9 @@ private fun SearchField(
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
+    val focusRequester = remember { FocusRequester() }
+    // The field only exists while search is open, so focus and the keyboard follow it.
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
     Surface(
         modifier = modifier.fillMaxWidth().heightIn(min = 48.dp),
         shape = RoundedCornerShape(50),
@@ -187,7 +194,7 @@ private fun SearchField(
             BasicTextField(
                 value = query,
                 onValueChange = onQueryChange,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).focusRequester(focusRequester),
                 singleLine = true,
                 textStyle = MaterialTheme.typography.bodyMedium.copy(color = colors.onSurface),
                 cursorBrush = SolidColor(colors.primary),
@@ -218,9 +225,16 @@ private fun TopicList(
     query: String,
     listState: LazyListState,
     onTopicClick: (String) -> Unit,
+    onClearQuery: (() -> Unit)?,
 ) {
     if (courses.isEmpty()) {
-        EmptyHint(if (query.isBlank()) "暂无知识点" else "没有匹配的知识点")
+        val hasQuery = query.isNotBlank()
+        EmptyHint(
+            text = if (hasQuery) "没有匹配的知识点" else "暂无知识点",
+            icon = if (hasQuery) Icons.Filled.Search else Icons.Filled.Info,
+            actionText = if (hasQuery) "清除搜索" else null,
+            onAction = onClearQuery,
+        )
     } else {
         LazyColumn(
             state = listState,
@@ -312,6 +326,19 @@ fun KnowledgeDetailScreen(
                 },
             )
         },
+        bottomBar = {
+            // Kept on screen: the practice entry used to sit at the end of long notes.
+            if (state.questions.isNotEmpty()) {
+                Surface(tonalElevation = 2.dp) {
+                    Button(
+                        onClick = onStartQuiz,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                    ) {
+                        Text("练习本知识点（${state.questions.size} 题）")
+                    }
+                }
+            }
+        },
     ) { padding ->
         Column(
             Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
@@ -331,11 +358,6 @@ fun KnowledgeDetailScreen(
                             Text("该知识点的笔记整理中。", style = MaterialTheme.typography.bodyMedium)
                         }
                     }
-                }
-            }
-            if (state.questions.isNotEmpty()) {
-                Button(onClick = onStartQuiz, modifier = Modifier.fillMaxWidth()) {
-                    Text("练习本知识点（${state.questions.size} 题）")
                 }
             }
         }

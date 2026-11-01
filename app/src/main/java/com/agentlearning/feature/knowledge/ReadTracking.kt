@@ -46,7 +46,7 @@ fun TrackReadingTime(onResume: () -> Unit, onPause: () -> Unit) {
 fun ReadCountPill(count: Int, modifier: Modifier = Modifier) {
     val colors = MaterialTheme.colorScheme
     if (count > 0) {
-        Pill("已读 $count 次", modifier, container = colors.tertiaryContainer, content = colors.onTertiaryContainer)
+        Pill("已读 $count 次", modifier, container = colors.secondaryContainer, content = colors.onSecondaryContainer)
     } else {
         Pill("未读", modifier, container = colors.surfaceVariant, content = colors.onSurfaceVariant)
     }

@@ -79,6 +79,21 @@ data class ReviewState(
     val status: ReviewStatus,
 )
 
+/** Review bookkeeping for one question, shown in the review list. */
+data class ReviewMeta(
+    val questionId: String,
+    val wrongCount: Int,
+    val nextReviewAt: Long?,
+    val status: ReviewStatus?,
+)
+
+data class ReviewItem(
+    val question: Question,
+    val wrongCount: Int,
+    val nextReviewAt: Long?,
+    val status: ReviewStatus?,
+)
+
 enum class StudyMode { TOPIC, DAILY, REVIEW_DUE, REVIEW_RECENT_WRONG, REVIEW_REPEATED_WRONG, REVIEW_MASTERED }
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }

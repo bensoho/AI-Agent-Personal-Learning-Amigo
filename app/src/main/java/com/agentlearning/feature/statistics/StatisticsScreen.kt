@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -17,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.agentlearning.ui.components.AppCard
+import com.agentlearning.ui.components.AppLinearProgress
 import com.agentlearning.ui.components.DailyBars
 import com.agentlearning.ui.components.SectionTitle
 import com.agentlearning.ui.components.StatCard
@@ -57,7 +57,7 @@ fun StatisticsScreen(viewModel: StatisticsViewModel = hiltViewModel()) {
                 val week = state.weekly[index]
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("${week.label}  ${week.accuracy.asPercent()}（${week.correct}/${week.total}）")
-                    LinearProgressIndicator(progress = { week.accuracy ?: 0f }, modifier = Modifier.fillMaxWidth())
+                    AppLinearProgress(progress = week.accuracy ?: 0f, modifier = Modifier.fillMaxWidth())
                 }
             }
         }
@@ -70,9 +70,9 @@ fun StatisticsScreen(viewModel: StatisticsViewModel = hiltViewModel()) {
                     Text(course.course.title, style = MaterialTheme.typography.titleSmall)
                     val completion = if (course.total == 0) 0f else course.answered.toFloat() / course.total
                     Text("课程完成 ${completion.asPercent()}（${course.answered}/${course.total} 题）")
-                    LinearProgressIndicator(progress = { completion }, modifier = Modifier.fillMaxWidth())
+                    AppLinearProgress(progress = completion, modifier = Modifier.fillMaxWidth())
                     Text("掌握度 ${course.mastery.asPercent()}")
-                    LinearProgressIndicator(progress = { course.mastery }, modifier = Modifier.fillMaxWidth())
+                    AppLinearProgress(progress = course.mastery, modifier = Modifier.fillMaxWidth())
                 }
             }
         }

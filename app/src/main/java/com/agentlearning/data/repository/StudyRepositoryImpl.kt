@@ -14,6 +14,7 @@ import com.agentlearning.data.mapper.QuestionMapper
 import com.agentlearning.domain.model.Question
 import com.agentlearning.domain.model.REVIEW_SESSION_LIMIT
 import com.agentlearning.domain.model.ReviewFilter
+import com.agentlearning.domain.model.ReviewMeta
 import com.agentlearning.domain.model.ReviewScheduler
 import com.agentlearning.domain.model.ReviewState
 import com.agentlearning.domain.model.ReviewStatus
@@ -55,6 +56,20 @@ class StudyRepositoryImpl @Inject constructor(
         clock.dayChanges()
             .flatMapLatest { observeEntities(filter, NO_LIMIT) }
             .map { list -> list.map(mapper::toDomain) }
+            .flowOn(Dispatchers.Default)
+
+    override fun observeReviewMeta(): Flow<List<ReviewMeta>> =
+        questionDao.observeReviewMeta()
+            .map { rows ->
+                rows.map { row ->
+                    ReviewMeta(
+                        questionId = row.questionId,
+                        wrongCount = row.wrongCount,
+                        nextReviewAt = row.nextReviewAt,
+                        status = row.status?.let { runCatching { ReviewStatus.valueOf(it) }.getOrNull() },
+                    )
+                }
+            }
             .flowOn(Dispatchers.Default)
 
     override suspend fun loadQuizQuestions(

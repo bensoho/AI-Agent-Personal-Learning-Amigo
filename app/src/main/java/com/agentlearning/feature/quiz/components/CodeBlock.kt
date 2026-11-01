@@ -1,5 +1,6 @@
 package com.agentlearning.feature.quiz.components
 
+import android.widget.Toast
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,6 +19,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -25,6 +27,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.agentlearning.ui.theme.LocalDarkTheme
 
 private data class CodeColors(val keyword: Color, val string: Color, val comment: Color, val number: Color)
 
@@ -54,8 +57,15 @@ private fun highlight(code: String, colors: CodeColors): AnnotatedString = build
 @Composable
 fun CodeBlock(code: String, modifier: Modifier = Modifier) {
     val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
     val scheme = MaterialTheme.colorScheme
-    val colors = CodeColors(scheme.primary, scheme.tertiary, scheme.outline, scheme.secondary)
+    // Comments and literals need darker tones than outline/tertiary on the light code background.
+    val colors = CodeColors(
+        keyword = scheme.primary,
+        string = if (LocalDarkTheme.current) scheme.tertiary else Color(0xFFB45309),
+        comment = scheme.onSurfaceVariant,
+        number = if (LocalDarkTheme.current) scheme.secondary else Color(0xFF0F766E),
+    )
     val text = remember(code, colors) { highlight(code, colors) }
 
     Surface(
@@ -65,7 +75,10 @@ fun CodeBlock(code: String, modifier: Modifier = Modifier) {
     ) {
         Column {
             Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = { clipboard.setText(AnnotatedString(code)) }) { Text("复制代码") }
+                TextButton(onClick = {
+                    clipboard.setText(AnnotatedString(code))
+                    Toast.makeText(context, "代码已复制", Toast.LENGTH_SHORT).show()
+                }) { Text("复制代码") }
             }
             Box(Modifier.horizontalScroll(rememberScrollState()).padding(start = 12.dp, end = 12.dp, bottom = 12.dp)) {
                 Text(text, fontFamily = FontFamily.Monospace, fontSize = 13.sp, softWrap = false)

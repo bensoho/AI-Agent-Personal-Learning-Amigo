@@ -21,7 +21,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -45,6 +44,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.agentlearning.feature.quiz.components.AnswerExplanation
 import com.agentlearning.feature.quiz.components.ChoiceOptions
 import com.agentlearning.feature.quiz.components.CodeBlock
+import com.agentlearning.ui.components.AppLinearProgress
 import com.agentlearning.ui.components.EmptyHint
 import com.agentlearning.ui.components.Pill
 import com.agentlearning.ui.components.displayName
@@ -137,8 +137,8 @@ fun QuizScreen(
                 Modifier.fillMaxSize().padding(padding).verticalScroll(scrollState).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                LinearProgressIndicator(
-                    progress = { (state.index + 1).toFloat() / state.questions.size },
+                AppLinearProgress(
+                    progress = (state.index + 1).toFloat() / state.questions.size,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {

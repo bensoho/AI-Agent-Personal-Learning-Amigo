@@ -5,6 +5,7 @@ import com.agentlearning.domain.model.CourseOutline
 import com.agentlearning.domain.model.DailyStat
 import com.agentlearning.domain.model.Question
 import com.agentlearning.domain.model.ReviewFilter
+import com.agentlearning.domain.model.ReviewMeta
 import com.agentlearning.domain.model.StatsSummary
 import com.agentlearning.domain.model.StudyMode
 import com.agentlearning.domain.model.ThemeMode
@@ -20,6 +21,7 @@ interface CurriculumRepository {
 
 interface StudyRepository {
     fun observeQuestions(filter: ReviewFilter): Flow<List<Question>>
+    fun observeReviewMeta(): Flow<List<ReviewMeta>>
     suspend fun loadQuizQuestions(mode: StudyMode, topicId: String?, dailyGoal: Int): List<Question>
 
     /** Loads questions by id, keeping the order of [ids]; used to restore a quiz after process death. */

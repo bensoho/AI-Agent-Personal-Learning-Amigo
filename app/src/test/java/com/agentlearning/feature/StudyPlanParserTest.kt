@@ -119,6 +119,23 @@ class StudyPlanParserTest {
     }
 
     @Test
+    fun markdown_parsesPandocSimpleTableWithCjkColumns() {
+        val markdown = listOf(
+            "  -------- ------ --------------------",
+            "  阶段     周次   主题",
+            "  -------- ------ --------------------",
+            "  第1个月  1--4   LangChain 基础",
+            "                  RAG",
+            "  -------- ------ --------------------",
+        ).joinToString("\n")
+
+        val table = MarkdownParser.parse(markdown).single() as MdBlock.Table
+
+        assertEquals(listOf("阶段", "周次", "主题"), table.header)
+        assertEquals(listOf("第1个月", "1--4", "LangChain 基础 RAG"), table.rows.single())
+    }
+
+    @Test
     fun markdown_parsesBlocksAndInlineSpans() {
         val blocks = MarkdownParser.parse(
             """

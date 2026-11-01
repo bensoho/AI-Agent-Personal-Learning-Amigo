@@ -35,7 +35,6 @@ import com.agentlearning.domain.model.StudyMode
 import com.agentlearning.ui.components.DailyBars
 import com.agentlearning.ui.components.SectionTitle
 import com.agentlearning.ui.components.StatCard
-import com.agentlearning.ui.components.asPercent
 import com.agentlearning.ui.theme.LocalDarkTheme
 
 @Composable
@@ -100,8 +99,9 @@ fun HomeScreen(
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text("今日学习任务", style = MaterialTheme.typography.titleMedium, color = Color.White)
+                            val weekPrefix = summary?.currentWeek?.let { "Week %02d · ".format(it) }.orEmpty()
                             Text(
-                                if (progress >= 1f) "今日目标已达成" else "还差 ${(state.dailyGoal - today).coerceAtLeast(0)} 题",
+                                weekPrefix + if (progress >= 1f) "今日目标已达成" else "还差 ${(state.dailyGoal - today).coerceAtLeast(0)} 题",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = Color.White,
                             )
@@ -123,17 +123,6 @@ fun HomeScreen(
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     StatCard("待复习题目", "${summary?.dueCount ?: 0}", Modifier.weight(1f))
-                    StatCard(
-                        "当前学习周次",
-                        summary?.currentWeek?.let { "Week %02d".format(it) } ?: "已完成",
-                        Modifier.weight(1f),
-                    )
-                }
-            }
-
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    StatCard("累计正确率", summary?.accuracy.asPercent(), Modifier.weight(1f))
                     StatCard("连续学习", "${summary?.streakDays ?: 0} 天", Modifier.weight(1f))
                 }
             }
