@@ -1,0 +1,657 @@
+{
+  "schemaVersion": 1,
+  "week": 15,
+  "module": "Production",
+  "topics": [
+    {
+      "id": "pr_w15_config",
+      "name": "langgraph.json and Application Structure",
+      "description": "Configuration keys, dependencies, graphs, environment variables and HTTP settings of a deployable app.",
+      "notes": [
+        "## langgraph.json 配置",
+        "- langgraph.json 描述部署所需的 dependencies、graphs、环境变量等；CLI 默认读取当前目录下的 langgraph.json。",
+        "- 一个应用由四部分组成：配置文件、图（graphs）、依赖文件（requirements.txt / pyproject.toml / package.json）、环境变量。",
+        "```json",
+        "{",
+        "  \"dependencies\": [\".\"],",
+        "  \"graphs\": {\"support_agent\": \"./my_agent/support.py:agent\", \"research_agent\": \"./my_agent/research.py:agent\"},",
+        "  \"env\": \"./.env\"",
+        "}",
+        "```",
+        "- dependencies：可以是 \".\"、包含依赖文件的目录路径（如 \"./\"）或包名；不要写 \"requirements.txt\" 文件名本身。",
+        "- graphs：图 ID 到 \"文件:变量\" 或 \"文件:函数\" 的映射；同一部署可定义多个图，它们共享 dependencies、env 和镜像。",
+        "- 每个图会得到一个默认 assistant，客户端用图 ID 作为 assistant_id 来选择图。",
+        "- env：.env 文件路径或变量映射，主要用于本地运行；生产环境通常在部署环境中配置变量和密钥。",
+        "- python_version（3.11/3.12/3.13）、image_distro（debian/wolfi/bookworm/bullseye）、api_version 用来固定运行环境。",
+        "- source: {\"kind\": \"uv\"} 会按 uv.lock 安装锁定版本；此时要省略 dependencies，并设置 python_version。",
+        "- 只写 \"dependencies\": [\".\"] 时，构建会根据 pyproject.toml 重新解析版本，不使用 uv.lock。",
+        "- http 块可配置 cors、middleware_order、configurable_headers、disable_meta 等；auth、store、checkpointer 也在同一文件中配置。",
+        "- disable_meta 会关闭 /、/info、/metrics、/docs、/openapi.json，但 /ok 健康检查保留，Kubernetes 探针仍可使用。"
+      ]
+    },
+    {
+      "id": "pr_w15_localcli",
+      "name": "LangGraph CLI, Local Server and Studio",
+      "description": "langgraph dev, up, build, dockerfile, SDK access and Studio for local development.",
+      "notes": [
+        "## 本地开发与 Studio",
+        "- LangGraph CLI 的常用命令：dev、build、deploy、dockerfile、up。",
+        "- langgraph dev：无需 Docker 的轻量服务，支持热重载，状态保存在本地目录，默认端口 2024；需要安装 langgraph-cli[inmem]。",
+        "- langgraph up：在 Docker 中启动完整栈（API 服务、PostgreSQL、Redis），默认端口 8123，更接近生产环境。",
+        "```bash",
+        "pip install -U \"langgraph-cli[inmem]\"",
+        "langgraph dev",
+        "langgraph up --recreate",
+        "```",
+        "- 推荐流程：日常用 dev 迭代 → 定期用 up 验证 → 部署前用 up --recreate 全新构建 → 部署。",
+        "- langgraph build -t <tag> 构建 Agent Server 的 Docker 镜像（-t 必填）。",
+        "- langgraph dockerfile 根据配置生成 Dockerfile；修改 langgraph.json 后需要重新生成。",
+        "- 依赖安装出问题时，可在配置中设置 \"pip_installer\": \"pip\"，然后重新构建。",
+        "- 用 langgraph-sdk 的 get_client / get_sync_client 连接本地服务；runs.stream(None, \"agent\", ...) 表示不绑定线程的运行。",
+        "- Studio 是可视化、交互并调试 agent 的 IDE，可连接本地服务或已部署的图。",
+        "- Graph 模式展示节点和中间状态；Chat 模式更简洁，仅支持状态包含或扩展 MessagesState 的图。",
+        "- Studio 还可以管理 assistants 与 threads、迭代 prompt，并通过 time travel 调试状态。"
+      ]
+    },
+    {
+      "id": "pr_w15_hosting",
+      "name": "Deployment Options, Revisions and RemoteGraph",
+      "description": "Cloud, hybrid, self-hosted and standalone options, revisions, and calling deployments from clients.",
+      "notes": [
+        "## 部署方式与客户端接入",
+        "- LangSmith Deployment 与框架无关，所有环境使用同一个 Agent Server 运行时。",
+        "- Cloud：由 LangChain 在 AWS/GCP 上全托管，可从 GitHub 或 langgraph deploy 创建，需要 Plus 及以上套餐。",
+        "- Self-hosted with control plane：控制平面和 Agent Server 都在自己的 Kubernetes 集群中运行（需要 Enterprise）。",
+        "- Hybrid：控制平面由 LangChain 托管，Agent Server 和数据平面在自己的基础设施中。",
+        "- Standalone server：用 Docker、Compose 或 Kubernetes 部署，自备 PostgreSQL、Redis 和 license，没有控制平面。",
+        "- Cloud 部署类型：Serverless 可能有冷启动；Dedicated 提供常驻容量（langgraph deploy --deployment-type dedicated）。",
+        "## Revision",
+        "- 创建部署时产生第一个 revision；之后通过 UI 的 + New Revision 或再次运行 langgraph deploy 发布新 revision。",
+        "- langgraph deploy 只能更新最初由它创建的部署；通过 UI 或 GitHub 集成创建的部署需用 UI 更新。",
+        "- 使用自己管理的 registry 时用 --push-to，或用 --image-uri 部署已推送的镜像（必须带 @sha256 摘要，不能用可变 tag）。",
+        "## RemoteGraph",
+        "- RemoteGraph 让你像调用本地编译图一样调用已部署的图：invoke、stream、get_state 等方法一致。",
+        "```python",
+        "from langgraph.pregel.remote import RemoteGraph",
+        "remote_graph = RemoteGraph(\"agent\", url=\"<DEPLOYMENT_URL>\")",
+        "```",
+        "- name 可以是图名（使用默认 assistant）或 assistant ID；需要 LangSmith API key。",
+        "- 默认运行是无状态的；要持久化状态，需创建 thread 并通过 config 传入 thread_id。",
+        "- 不要用 RemoteGraph 调用同一部署上的图，可能导致死锁；同一部署内应使用本地组合或子图。"
+      ]
+    },
+    {
+      "id": "pr_w15_observe",
+      "name": "LangSmith Monitoring, Alerts, Rules and Cost",
+      "description": "Dashboards, alerts, automation rules and cost tracking in LangSmith.",
+      "notes": [
+        "## LangSmith 监控与成本",
+        "- Prebuilt dashboard 会为每个 tracing project（或 agent environment）自动创建，包含 Traces、LLM Calls、Cost & Tokens、Tools、Run Types、Feedback Scores 等部分。",
+        "- 可按 run tag 或 metadata 分组；metadata 和 tags 不会在父子 run 之间传播，需要在 trace 和具体 run 上各自附加。",
+        "- Custom dashboard 的指标：Count、Latency、Time to first token、Tokens、Cost、Feedback score、Ratio；Ratio 由分子和分母（各自带 filter）组成，可用于错误率。",
+        "## Alerts",
+        "- Alerts 作用于单个 tracing project 或 agent environment，基于阈值；指标类型有 Run Count、Cost、Errors、Feedback Score、Latency。",
+        "- 条件包括聚合方法、比较运算符、阈值和聚合窗口（5 或 15 分钟）；Errors 与 Latency 还可用 filter（Status、Run Type、Tag、Error），条件之间只支持 AND。",
+        "- 通知渠道：Slack、PagerDuty、Dynatrace、Webhook。",
+        "- Webhook 不做模板替换；告警字段（alert_rule_name、project_name、triggered_metric_value 等）作为顶层键并入 JSON。",
+        "## Automation rules",
+        "- 规则由 item type（Runs/Threads）、filter、sampling rate 和 action 定义。",
+        "- Action 包括 Add to Annotation Queue、Add to Dataset、Trigger Webhooks、在线评估器、Extend Data Retention 等。",
+        "- Thread 规则在线程空闲后才执行，空闲时间默认 10 分钟，不能低于 2 分钟。",
+        "## Cost tracking",
+        "- LLM 成本由 token 数、模型与提供商（ls_provider、ls_model_name）和模型价格表自动计算。",
+        "- 非线性定价或非 LLM run（如 tool）可在 usage_metadata 中直接给出成本，例如 total_cost。",
+        "```python",
+        "run = get_current_run_tree()",
+        "run.set(usage_metadata={\"total_cost\": 0.0015})",
+        "```",
+        "- 价格表的更新不会回填已经记录的 trace。"
+      ]
+    }
+  ],
+  "questions": [
+    {
+      "id": "pr_w15_config_q101",
+      "topicId": "pr_w15_config",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "Which configuration file does the LangGraph CLI use by default?",
+      "options": [
+        {"id": "A", "text": "agent.config.yaml"},
+        {"id": "B", "text": "langgraph.json in the current directory"},
+        {"id": "C", "text": "deploy.toml"},
+        {"id": "D", "text": "Only the .env file"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "The CLI defaults to langgraph.json in the current directory; the -c/--config option can point to another path. The .env file only holds environment variables and is referenced from langgraph.json.",
+      "tags": ["langgraph.json", "CLI"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/application-structure"
+    },
+    {
+      "id": "pr_w15_config_q102",
+      "topicId": "pr_w15_config",
+      "type": "DEBUGGING",
+      "difficulty": "INTERMEDIATE",
+      "title": "The project keeps its dependencies in requirements.txt at the repository root, but the build cannot find them. What is the documented fix for this langgraph.json?",
+      "codeSnippet": "{\n  \"dependencies\": [\"requirements.txt\"],\n  \"graphs\": {\"agent\": \"./app/graph.py:graph\"},\n  \"env\": \".env\"\n}",
+      "options": [
+        {"id": "A", "text": "Rename the graphs key to requirements"},
+        {"id": "B", "text": "Turn env into an object instead of a file path"},
+        {"id": "C", "text": "Use \"./\", the directory that contains requirements.txt, instead of the file name"},
+        {"id": "D", "text": "Remove the graphs key"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "dependencies takes a directory path (or \".\" or a package name) where the dependency file lives; the docs say not to specify the string requirements.txt itself. The other changes do not affect how dependencies are located.",
+      "tags": ["langgraph.json", "Dependencies"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/cli"
+    },
+    {
+      "id": "pr_w15_config_q103",
+      "topicId": "pr_w15_config",
+      "type": "CODE_COMPLETION",
+      "difficulty": "INTERMEDIATE",
+      "title": "langgraph.json defines two graphs. Which value completes the call so that the research graph runs?",
+      "codeSnippet": "# langgraph.json graphs:\n#   \"support_agent\": \"./my_agent/support.py:agent\"\n#   \"research_agent\": \"./my_agent/research.py:agent\"\nfrom langgraph_sdk import get_client\n\nclient = get_client(url=\"http://localhost:2024\")\n\nasync def run_research():\n    async for chunk in client.runs.stream(\n        None, \"______\", input={\"messages\": [{\"role\": \"human\", \"content\": \"Hi\"}]}\n    ):\n        print(chunk.event)",
+      "options": [
+        {"id": "A", "text": "support_agent"},
+        {"id": "B", "text": "./my_agent/research.py:agent"},
+        {"id": "C", "text": "research_agent"},
+        {"id": "D", "text": "agent"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "Agent Server creates a default assistant per graph, so the graph ID from the graphs key is passed as the assistant_id. The file path is the value of the key, not the ID.",
+      "tags": ["langgraph.json", "Assistants", "SDK"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/application-structure"
+    },
+    {
+      "id": "pr_w15_config_q104",
+      "topicId": "pr_w15_config",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "Which values are valid for the image_distro key of langgraph.json?",
+      "options": [
+        {"id": "A", "text": "debian"},
+        {"id": "B", "text": "wolfi"},
+        {"id": "C", "text": "alpine"},
+        {"id": "D", "text": "bullseye"}
+      ],
+      "correctAnswer": ["A", "B", "D"],
+      "explanation": "The documented options are debian, wolfi, bookworm and bullseye, with wolfi recommended for smaller and more secure images. alpine is not listed.",
+      "tags": ["langgraph.json", "Docker"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/cli"
+    },
+    {
+      "id": "pr_w15_config_q105",
+      "topicId": "pr_w15_config",
+      "type": "CODE_COMPLETION",
+      "difficulty": "ADVANCED",
+      "title": "The project has a uv.lock and image builds must install the locked versions. Which key completes the config?",
+      "codeSnippet": "{\n  \"python_version\": \"3.12\",\n  \"graphs\": {\"chat\": \"./src/agent/graph.py:graph\"},\n  \"______\": {\"kind\": \"uv\"}\n}",
+      "options": [
+        {"id": "A", "text": "dependencies"},
+        {"id": "B", "text": "source"},
+        {"id": "C", "text": "pip_installer"},
+        {"id": "D", "text": "base_image"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "source with kind \"uv\" makes the build export requirements from the lockfile (uv export --frozen) and requires python_version. pip_installer only selects the installer and does not control whether uv.lock is used.",
+      "tags": ["langgraph.json", "uv", "Reproducibility"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/cli"
+    },
+    {
+      "id": "pr_w15_config_q106",
+      "topicId": "pr_w15_config",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "ADVANCED",
+      "title": "Which routes are disabled when langgraph.json sets \"http\": {\"disable_meta\": true}?",
+      "options": [
+        {"id": "A", "text": "/info"},
+        {"id": "B", "text": "/metrics"},
+        {"id": "C", "text": "/ok"},
+        {"id": "D", "text": "/docs"},
+        {"id": "E", "text": "/threads"}
+      ],
+      "correctAnswer": ["A", "B", "D"],
+      "explanation": "disable_meta turns off /, /info, /metrics, /docs and /openapi.json. The /ok health check stays available for liveness and readiness probes, and thread routes are controlled by a separate disable_threads flag.",
+      "tags": ["langgraph.json", "HTTP", "Hardening"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/cli"
+    },
+    {
+      "id": "pr_w15_config_q108",
+      "topicId": "pr_w15_config",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "How does the application-structure documentation say environment variables are typically handled for a production deployment, compared with local runs?",
+      "options": [
+        {"id": "A", "text": "They must always be hard-coded in langgraph.json"},
+        {"id": "B", "text": "They are not supported in production"},
+        {"id": "C", "text": "They are read from the graph state at runtime"},
+        {"id": "D", "text": "The env key is used for local runs, while production variables are typically configured in the deployment environment"}
+      ],
+      "correctAnswer": ["D"],
+      "explanation": "The env key of langgraph.json is convenient when running a deployed-style app locally, but for production you typically configure variables and secrets in the deployment environment itself.",
+      "tags": ["Environment Variables", "Deployment"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/application-structure"
+    },
+    {
+      "id": "pr_w15_localcli_q101",
+      "topicId": "pr_w15_localcli",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "Which command starts a lightweight local Agent Server without requiring Docker?",
+      "options": [
+        {"id": "A", "text": "langgraph up"},
+        {"id": "B", "text": "langgraph build"},
+        {"id": "C", "text": "langgraph dev"},
+        {"id": "D", "text": "langgraph dockerfile"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "langgraph dev runs directly in your environment with hot reloading and no Docker. langgraph up needs Docker and starts the full container stack.",
+      "tags": ["CLI", "Local Development"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/local-dev-testing"
+    },
+    {
+      "id": "pr_w15_localcli_q102",
+      "topicId": "pr_w15_localcli",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "On which port does langgraph dev listen by default?",
+      "options": [
+        {"id": "A", "text": "8123"},
+        {"id": "B", "text": "2024"},
+        {"id": "C", "text": "8000"},
+        {"id": "D", "text": "5432"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "langgraph dev defaults to port 2024, while langgraph up defaults to 8123. Port 5432 is used by the PostgreSQL container started by langgraph up.",
+      "tags": ["CLI", "Local Development"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/cli"
+    },
+    {
+      "id": "pr_w15_localcli_q103",
+      "topicId": "pr_w15_localcli",
+      "type": "CODE_COMPLETION",
+      "difficulty": "BEGINNER",
+      "title": "Which extra must be installed so that the langgraph dev command is available?",
+      "codeSnippet": "pip install -U \"langgraph-cli[______]\"",
+      "options": [
+        {"id": "A", "text": "inmem"},
+        {"id": "B", "text": "docker"},
+        {"id": "C", "text": "postgres"},
+        {"id": "D", "text": "studio"}
+      ],
+      "correctAnswer": ["A"],
+      "explanation": "The dev server requires the inmem extra of langgraph-cli. The other names are not documented extras.",
+      "tags": ["CLI", "Installation"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/cli"
+    },
+    {
+      "id": "pr_w15_localcli_q104",
+      "topicId": "pr_w15_localcli",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "Which statements about langgraph dev and langgraph up are correct?",
+      "options": [
+        {"id": "A", "text": "langgraph up requires Docker"},
+        {"id": "B", "text": "langgraph up persists state in PostgreSQL"},
+        {"id": "C", "text": "langgraph dev reloads on code changes by default"},
+        {"id": "D", "text": "langgraph dev requires a PostgreSQL container"},
+        {"id": "E", "text": "langgraph dev listens on port 8123 by default"}
+      ],
+      "correctAnswer": ["A", "B", "C"],
+      "explanation": "up builds and runs containers for the server, PostgreSQL and Redis, while dev is a lightweight in-environment server with hot reloading. dev uses port 2024 and needs no database container.",
+      "tags": ["CLI", "Local Development"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/local-dev-testing"
+    },
+    {
+      "id": "pr_w15_localcli_q105",
+      "topicId": "pr_w15_localcli",
+      "type": "CODE_READING",
+      "difficulty": "INTERMEDIATE",
+      "title": "What do the first two positional arguments of runs.stream mean in this call?",
+      "codeSnippet": "from langgraph_sdk import get_sync_client\n\nclient = get_sync_client(url=\"http://localhost:2024\")\n\nfor chunk in client.runs.stream(\n    None,\n    \"agent\",\n    input={\"messages\": [{\"role\": \"human\", \"content\": \"Hi\"}]},\n    stream_mode=\"messages-tuple\",\n):\n    print(chunk.event)",
+      "options": [
+        {"id": "A", "text": "None selects the default thread; \"agent\" is the Docker image name"},
+        {"id": "B", "text": "None is a threadless run; \"agent\" is the assistant (graph) name defined in langgraph.json"},
+        {"id": "C", "text": "None disables streaming; \"agent\" is the API key"},
+        {"id": "D", "text": "None is the checkpoint ID; \"agent\" is the node name"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "Passing None as the thread makes a threadless run, and the second argument is the assistant, which can be the graph name from langgraph.json. It is not an image, key or node name.",
+      "tags": ["SDK", "Runs", "Local Development"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/local-dev-testing"
+    },
+    {
+      "id": "pr_w15_localcli_q106",
+      "topicId": "pr_w15_localcli",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "For which graphs does Studio's Chat mode work?",
+      "options": [
+        {"id": "A", "text": "Any graph, regardless of its state schema"},
+        {"id": "B", "text": "Only graphs whose state includes or extends MessagesState"},
+        {"id": "C", "text": "Only graphs deployed to LangSmith Cloud"},
+        {"id": "D", "text": "Only graphs without tools"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "Chat mode is a simpler UI that requires a messages-based state. Graph mode exposes the full feature set, and Studio works with both local and deployed graphs.",
+      "tags": ["Studio", "MessagesState"],
+      "technology": "LangSmith",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/studio"
+    },
+    {
+      "id": "pr_w15_localcli_q108",
+      "topicId": "pr_w15_localcli",
+      "type": "DEBUGGING",
+      "difficulty": "ADVANCED",
+      "title": "The image build fails because uv cannot resolve this project's dependency graph. Which change is the documented fix?",
+      "codeSnippet": "{\n  \"dependencies\": [\".\"],\n  \"graphs\": {\"agent\": \"./agent.py:graph\"},\n  \"pip_installer\": \"uv\"\n}",
+      "options": [
+        {"id": "A", "text": "Set image_distro to \"alpine\""},
+        {"id": "B", "text": "Remove the graphs key"},
+        {"id": "C", "text": "Set api_version to \"0.0\""},
+        {"id": "D", "text": "Set pip_installer to \"pip\" and rebuild, for example with langgraph up --recreate"}
+      ],
+      "correctAnswer": ["D"],
+      "explanation": "pip_installer can be switched to pip when uv cannot handle the dependency graph or pyproject structure, and a fresh rebuild applies it. The other options are unrelated to dependency installation or are invalid values.",
+      "tags": ["langgraph.json", "Dependencies", "Troubleshooting"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/local-dev-testing"
+    },
+    {
+      "id": "pr_w15_localcli_q109",
+      "topicId": "pr_w15_localcli",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "ADVANCED",
+      "title": "You generated a Dockerfile with langgraph dockerfile and later edited langgraph.json. What is required for the change to take effect when building that Dockerfile?",
+      "options": [
+        {"id": "A", "text": "Nothing; the Dockerfile reads langgraph.json at build time"},
+        {"id": "B", "text": "Restart the Docker daemon"},
+        {"id": "C", "text": "Run langgraph dockerfile again to regenerate it"},
+        {"id": "D", "text": "Run langgraph dev once"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "The command translates langgraph.json into Dockerfile instructions at generation time, so later edits are not reflected until it is re-run.",
+      "tags": ["CLI", "Docker"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/cli"
+    },
+    {
+      "id": "pr_w15_hosting_q101",
+      "topicId": "pr_w15_hosting",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "Which LangSmith Deployment option runs Agent Server containers that you manage yourself with Docker or Kubernetes and has no control plane?",
+      "options": [
+        {"id": "A", "text": "Cloud"},
+        {"id": "B", "text": "Hybrid"},
+        {"id": "C", "text": "Self-hosted with control plane"},
+        {"id": "D", "text": "Standalone server"}
+      ],
+      "correctAnswer": ["D"],
+      "explanation": "A standalone Agent Server needs your own PostgreSQL, Redis and LangSmith license and has no control plane. The other options all include a control plane, managed by LangChain or by you.",
+      "tags": ["Deployment", "Standalone"],
+      "technology": "LangSmith",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/deployment"
+    },
+    {
+      "id": "pr_w15_hosting_q102",
+      "topicId": "pr_w15_hosting",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "Which are LangSmith Deployment environments described in the docs?",
+      "options": [
+        {"id": "A", "text": "Cloud"},
+        {"id": "B", "text": "Hybrid"},
+        {"id": "C", "text": "Standalone server"},
+        {"id": "D", "text": "Mobile on-device runtime"}
+      ],
+      "correctAnswer": ["A", "B", "C"],
+      "explanation": "The docs list Cloud, Self-hosted with control plane, Hybrid and Standalone server, all using the same Agent Server runtime. No mobile on-device option exists.",
+      "tags": ["Deployment", "Hybrid", "Cloud"],
+      "technology": "LangSmith",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/deployment"
+    },
+    {
+      "id": "pr_w15_hosting_q103",
+      "topicId": "pr_w15_hosting",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "What does RemoteGraph provide?",
+      "options": [
+        {"id": "A", "text": "A tool for visualizing graphs in the browser"},
+        {"id": "B", "text": "A client-side interface to call a deployment like a local compiled graph, with methods such as invoke() and stream()"},
+        {"id": "C", "text": "A database for storing checkpoints"},
+        {"id": "D", "text": "A way to bundle the graph into a Docker image"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "RemoteGraph offers API parity with a compiled graph so the same code works against a local graph and a deployment. It does not build images or store data itself.",
+      "tags": ["RemoteGraph", "Client"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/use-remote-graph"
+    },
+    {
+      "id": "pr_w15_hosting_q104",
+      "topicId": "pr_w15_hosting",
+      "type": "CODE_READING",
+      "difficulty": "INTERMEDIATE",
+      "title": "Why can get_state(config) return the state of the earlier invoke() call in this code?",
+      "codeSnippet": "from langgraph.pregel.remote import RemoteGraph\nfrom langgraph_sdk import get_sync_client\n\nurl = \"<DEPLOYMENT_URL>\"\nremote_graph = RemoteGraph(\"agent\", url=url)\nthread = get_sync_client(url=url).threads.create()\nconfig = {\"configurable\": {\"thread_id\": thread[\"thread_id\"]}}\nremote_graph.invoke({\"messages\": [{\"role\": \"user\", \"content\": \"hi\"}]}, config=config)\nprint(remote_graph.get_state(config))",
+      "options": [
+        {"id": "A", "text": "RemoteGraph always persists every run on its own"},
+        {"id": "B", "text": "get_state works with just the graph name"},
+        {"id": "C", "text": "A thread was created and its thread_id was passed through config; runs without a thread are stateless by default"},
+        {"id": "D", "text": "The URL argument enables checkpointing"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "By default runs are stateless; passing a thread ID in config makes the deployment persist checkpoints and state for that thread. Persistence is not automatic and does not depend on the URL.",
+      "tags": ["RemoteGraph", "Threads", "State"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/use-remote-graph"
+    },
+    {
+      "id": "pr_w15_hosting_q105",
+      "topicId": "pr_w15_hosting",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "ADVANCED",
+      "title": "Why should RemoteGraph not be used to call another graph on the same deployment?",
+      "options": [
+        {"id": "A", "text": "RemoteGraph cannot call graphs that use a checkpointer"},
+        {"id": "B", "text": "It is only supported in JavaScript"},
+        {"id": "C", "text": "It always requires a different API key"},
+        {"id": "D", "text": "It can cause deadlocks and resource exhaustion; use local graph composition or subgraphs instead"}
+      ],
+      "correctAnswer": ["D"],
+      "explanation": "The docs warn that RemoteGraph is meant for graphs on other deployments, and calling the same deployment can deadlock. Graphs within one deployment should be composed locally or as subgraphs.",
+      "tags": ["RemoteGraph", "Pitfalls"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/use-remote-graph"
+    },
+    {
+      "id": "pr_w15_hosting_q106",
+      "topicId": "pr_w15_hosting",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "You ran langgraph deploy earlier to create a Cloud deployment. What happens when you run langgraph deploy again from the project directory after changing code?",
+      "options": [
+        {"id": "A", "text": "A second, separate deployment is always created"},
+        {"id": "B", "text": "It finds the existing deployment by name and creates a new revision with the latest code"},
+        {"id": "C", "text": "It deletes the deployment and starts over"},
+        {"id": "D", "text": "It only updates the environment variables"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "Revisions release code changes to an existing deployment; langgraph deploy locates the deployment by name (or --deployment-id) and adds a revision. It can only update deployments originally created with langgraph deploy.",
+      "tags": ["Revisions", "langgraph deploy"],
+      "technology": "LangSmith",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/deployment-revisions"
+    },
+    {
+      "id": "pr_w15_observe_q101",
+      "topicId": "pr_w15_observe",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "Which automation rule action sends matching traces to humans for review?",
+      "options": [
+        {"id": "A", "text": "Trigger Webhooks"},
+        {"id": "B", "text": "Add to Dataset"},
+        {"id": "C", "text": "Extend Data Retention"},
+        {"id": "D", "text": "Add to Annotation Queue"}
+      ],
+      "correctAnswer": ["D"],
+      "explanation": "Add to Annotation Queue places matched runs or threads in a queue for human review, for example all traces with negative feedback. Adding to a dataset collects examples, and webhooks post to an external endpoint.",
+      "tags": ["Automation Rules", "Annotation Queue"],
+      "technology": "LangSmith",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/rules"
+    },
+    {
+      "id": "pr_w15_observe_q102",
+      "topicId": "pr_w15_observe",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "Which metric types can LangSmith alerts be configured on?",
+      "options": [
+        {"id": "A", "text": "Latency"},
+        {"id": "B", "text": "Feedback Score"},
+        {"id": "C", "text": "GPU utilization"},
+        {"id": "D", "text": "Cost"}
+      ],
+      "correctAnswer": ["A", "B", "D"],
+      "explanation": "Alerts support Run Count, Cost, Errors, Feedback Score and Latency. Hardware metrics such as GPU utilization are not alert metrics.",
+      "tags": ["Alerts", "Monitoring"],
+      "technology": "LangSmith",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/alerts"
+    },
+    {
+      "id": "pr_w15_observe_q103",
+      "topicId": "pr_w15_observe",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "ADVANCED",
+      "title": "A webhook alert's request body template contains the placeholder {alert_rule_name}, and the receiving service does not parse the JSON. What is delivered?",
+      "options": [
+        {"id": "A", "text": "LangSmith replaces the placeholder with the alert rule name"},
+        {"id": "B", "text": "The placeholder is sent verbatim, while the alert fields are merged into the JSON as top-level keys"},
+        {"id": "C", "text": "The webhook is rejected by LangSmith as invalid"},
+        {"id": "D", "text": "The alert fields are dropped when a template is present"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "LangSmith does not perform template substitution on the body; auto-populated fields such as alert_rule_name and project_name are added as top-level keys. A placeholder only resolves if the receiver itself extracts fields from the JSON.",
+      "tags": ["Alerts", "Webhooks"],
+      "technology": "LangSmith",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/alerts"
+    },
+    {
+      "id": "pr_w15_observe_q104",
+      "topicId": "pr_w15_observe",
+      "type": "CODE_READING",
+      "difficulty": "ADVANCED",
+      "title": "The model price table has input at $2 per 1M tokens, cache_read input at $1 per 1M tokens and output at $3 per 1M tokens. What total cost does LangSmith compute for this usage_metadata?",
+      "codeSnippet": "usage_metadata = {\n    \"input_tokens\": 20,\n    \"input_token_details\": {\"cache_read\": 5},\n    \"output_tokens\": 10,\n    \"total_tokens\": 30,\n}",
+      "options": [
+        {"id": "A", "text": "$3.5e-5"},
+        {"id": "B", "text": "$7.0e-5"},
+        {"id": "C", "text": "$6.5e-5"},
+        {"id": "D", "text": "$6.0e-5"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "Cost is computed from the most specific token type: 5 cache_read tokens at $1/1M plus the remaining 15 input tokens at $2/1M gives $3.5e-5, and 10 output tokens at $3/1M gives $3e-5, totaling $6.5e-5. Pricing all input at the default rate would wrongly give $7.0e-5.",
+      "tags": ["Cost Tracking", "Tokens"],
+      "technology": "LangSmith",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/cost-tracking"
+    },
+    {
+      "id": "pr_w15_observe_q105",
+      "topicId": "pr_w15_observe",
+      "type": "CODE_COMPLETION",
+      "difficulty": "INTERMEDIATE",
+      "title": "Which metadata key lets LangSmith match a custom model's token counts to a price in the model pricing table?",
+      "codeSnippet": "from langsmith import traceable\n\n@traceable(\n    run_type=\"llm\",\n    metadata={\"ls_provider\": \"my_provider\", \"______\": \"my_model\"},\n)\ndef chat_model(messages: list):\n    ...",
+      "options": [
+        {"id": "A", "text": "ls_model"},
+        {"id": "B", "text": "model_price"},
+        {"id": "C", "text": "ls_cost_name"},
+        {"id": "D", "text": "ls_model_name"}
+      ],
+      "correctAnswer": ["D"],
+      "explanation": "The match pattern in the pricing table is applied to ls_model_name (and the provider to ls_provider) in the run metadata. Token counts and a price entry are also required to compute cost.",
+      "tags": ["Cost Tracking", "Metadata"],
+      "technology": "LangSmith",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/cost-tracking"
+    },
+    {
+      "id": "pr_w15_observe_q107",
+      "topicId": "pr_w15_observe",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "Which custom dashboard metric lets you define a numerator and a denominator, each with its own filter, for example to chart an error rate?",
+      "options": [
+        {"id": "A", "text": "Ratio"},
+        {"id": "B", "text": "Count"},
+        {"id": "C", "text": "Time to first token"},
+        {"id": "D", "text": "Feedback score"}
+      ],
+      "correctAnswer": ["A"],
+      "explanation": "Ratio combines two metrics, each with its own filter, which suits error rate or LLM run share. Count only totals runs matching one filter.",
+      "tags": ["Dashboards", "Monitoring"],
+      "technology": "LangSmith",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/dashboards"
+    },
+    {
+      "id": "pr_w15_observe_q108",
+      "topicId": "pr_w15_observe",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "ADVANCED",
+      "title": "You want dashboard charts for both traces and LLM calls grouped by the same metadata key. What do the docs recommend?",
+      "options": [
+        {"id": "A", "text": "Attach the metadata only to the root run; it propagates to children"},
+        {"id": "B", "text": "Attach the metadata only to the LLM runs; it propagates to the root"},
+        {"id": "C", "text": "Attach the metadata to both the trace (root run) and the specific LLM runs"},
+        {"id": "D", "text": "Use a tag instead, because tags propagate to all runs"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "Metadata and tags are not propagated between parent and child runs, so each run level that you want to group by needs the metadata attached.",
+      "tags": ["Dashboards", "Metadata", "Tags"],
+      "technology": "LangSmith",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/langsmith/dashboards"
+    }
+  ]
+}

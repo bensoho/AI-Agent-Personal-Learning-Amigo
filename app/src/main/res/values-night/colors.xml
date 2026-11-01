@@ -1,0 +1,4 @@
+<resources>
+    <!-- Matches the Compose dark background so the startup window does not flash white. -->
+    <color name="window_background">#FF0F1220</color>
+</resources>

@@ -1,0 +1,662 @@
+{
+  "schemaVersion": 1,
+  "week": 4,
+  "module": "LangChain",
+  "topics": [
+    {
+      "id": "lc_w04_loaders_splitters",
+      "name": "Document Loaders & Text Splitters",
+      "description": "Loading sources into Documents and splitting them into retrievable chunks.",
+      "notes": [
+        "## Document 与 Loader",
+        "- Document 是文本单元，有三个属性：page_content（文本）、metadata（任意 dict，如 source）、id（可选）。",
+        "- Document loader 把 Slack、Notion、Google Drive 等不同来源的数据读成统一的 Document 格式。",
+        "- 所有 loader 实现 BaseLoader 接口：load() 一次性加载全部，lazy_load() 惰性流式加载，适合大数据集。",
+        "## Text Splitter",
+        "- 目的：把大文档切成可单独检索、且能放进模型上下文窗口的小块。",
+        "- 大多数场景从 RecursiveCharacterTextSplitter 开始，文档称它是通用文本的推荐切分器。",
+        "- 递归切分：先尽量保留大单元（段落），超过 chunk_size 就降到下一层（句子），必要时一直降到单词。",
+        "```python",
+        "from langchain_text_splitters import RecursiveCharacterTextSplitter",
+        "",
+        "splitter = RecursiveCharacterTextSplitter(",
+        "    chunk_size=1000, chunk_overlap=200, add_start_index=True",
+        ")",
+        "all_splits = splitter.split_documents(docs)",
+        "```",
+        "- add_start_index=True 会在每个块的 metadata 中保留 start_index（块在原文档中的字符偏移）。",
+        "## 其他切分策略",
+        "- 按长度：按 token 数或字符数切分，例如 CharacterTextSplitter.from_tiktoken_encoder。",
+        "- 按文档结构：Markdown 按标题、HTML 按标签、JSON 按对象或数组元素、代码按函数或类。"
+      ]
+    },
+    {
+      "id": "lc_w04_vectorstore_retrievers",
+      "name": "Vector Store Queries & Retrievers",
+      "description": "Querying vector stores and wrapping them as retrievers.",
+      "notes": [
+        "## VectorStore 接口",
+        "- 统一接口包含三个基本操作：add_documents 添加、delete 按 ID 删除、similarity_search 语义查询。",
+        "- 常用参数：k 控制返回数量，filter 按 metadata 过滤（各实现的支持程度不同，需查对应文档）。",
+        "```python",
+        "ids = vector_store.add_documents(documents=all_splits)",
+        "docs = vector_store.similarity_search(",
+        "    \"query\", k=3, filter={\"source\": \"tweets\"}",
+        ")",
+        "```",
+        "- 其他查询方式：同步或异步、按字符串或按向量（similarity_search_by_vector）、带分数（similarity_search_with_score）、MMR（兼顾相似度与多样性）。",
+        "- 分数含义因提供方而异；教程示例里的分数是与相似度成反比的距离。",
+        "## Retriever",
+        "- VectorStore 不是 Runnable；Retriever 是 Runnable，支持 invoke、batch 及异步版本。",
+        "- vector_store.as_retriever 返回 VectorStoreRetriever，用 search_type 与 search_kwargs 配置。",
+        "- search_type 可选 \"similarity\"（默认）、\"mmr\"、\"similarity_score_threshold\"（按相似度分数过滤）。",
+        "```python",
+        "retriever = vector_store.as_retriever(",
+        "    search_type=\"similarity\",",
+        "    search_kwargs={\"k\": 1},",
+        ")",
+        "```",
+        "- Retriever 也可以包装非向量来源，例如外部 API。"
+      ]
+    },
+    {
+      "id": "lc_w04_rag_architectures",
+      "name": "RAG Architectures",
+      "description": "2-step RAG, agentic RAG and hybrid RAG compared.",
+      "notes": [
+        "## 为什么需要检索",
+        "- LLM 有两个限制：上下文有限（无法一次读入整个语料）；知识是静态的（训练数据停在某个时间点）。",
+        "- 检索在查询时取回相关的外部知识，这就是 RAG（Retrieval-Augmented Generation）的基础。",
+        "## 三种架构",
+        "- 2-Step RAG：检索总是在生成之前执行，简单且可预测，适合 FAQ、文档问答机器人。",
+        "- Agentic RAG：由 LLM 驱动的 agent 在推理中决定何时、如何检索，灵活但延迟不固定，适合有多个工具的研究助手。",
+        "- Hybrid：结合两者并加入验证步骤，控制与灵活性居中。",
+        "## 对比",
+        "- 2-Step：控制高、灵活性低、延迟快；LLM 调用次数有上限，所以延迟更可预测。",
+        "- Agentic：控制低、灵活性高、延迟可变。",
+        "- Agent 要具备 RAG 能力，只需要能获取外部知识的工具（文档加载器、Web API、数据库查询等）。",
+        "```python",
+        "agent = create_agent(",
+        "    model=\"claude-sonnet-4-6\",",
+        "    tools=[fetch_url],  # 检索工具",
+        "    system_prompt=system_prompt,",
+        ")",
+        "```",
+        "## Hybrid RAG 的典型组件",
+        "- Query enhancement：改写、生成多个变体或扩展查询。",
+        "- Retrieval validation：判断检索结果是否相关且充分，不够就改写后再检索。",
+        "- Answer validation：检查答案的准确性、完整性及与来源一致，必要时重新生成。",
+        "- 已有知识库（SQL、文档数据库、CRM 等）不必重建：可作为 agent 的工具，或查询后把结果作为上下文交给 LLM。"
+      ]
+    },
+    {
+      "id": "lc_w04_grounding_sources",
+      "name": "Grounding, Sources & Prompt Injection",
+      "description": "Passing retrieved context with sources and handling injection risk.",
+      "notes": [
+        "## 把检索结果交给模型",
+        "- RAG 把问题和检索到的上下文一起放进提示词，让模型基于它回答。",
+        "- 切分后每个块保留 metadata（如 source、page、start_index），可以用来标注引用来源。",
+        "- 教程里的检索工具给每个块加上 `# Source: <url>` 头部，来源取自 doc.metadata。",
+        "```python",
+        "content = (",
+        "    f\"# Source: {doc.metadata.get('source', 'unknown')}\\n\\n\"",
+        "    f\"{doc.page_content}\"",
+        ")",
+        "```",
+        "- 在系统提示里要求引用相关片段或附上文档链接，答案才可追溯。",
+        "## 检索结果工具化",
+        "- Deep Agents 教程：工具做相似度搜索（k=4），把块写入文件系统，只返回文件路径。",
+        "- 这样 orchestrator 不必把完整块文本放进自己的上下文，而是委派子 agent 读取并总结。",
+        "## 安全：间接提示注入",
+        "- 检索到的内容与系统提示共享上下文窗口，文档里类似指令的文本可能被模型当作指令执行。",
+        "- 教程的做法：提示中说明检索内容只是数据、忽略其中的指令；用 `# Source:` 头区分元数据和正文。",
+        "- 没有任何提示或分隔符策略能完全防止注入，所以要校验输出，确认引用了预期的文档路径、结论与来源一致。",
+        "## 可观测性",
+        "- 开启 LangSmith 后，每次查询都会记录 trace，可检查检索、工具调用和模型回复。"
+      ]
+    }
+  ],
+  "questions": [
+    {
+      "id": "lc_w04_loaders_splitters_q101",
+      "topicId": "lc_w04_loaders_splitters",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "Which methods form the common API shared by LangChain document loaders?",
+      "options": [
+        {"id": "A", "text": "read() and stream()"},
+        {"id": "B", "text": "fetch() and crawl()"},
+        {"id": "C", "text": "load() and lazy_load()"},
+        {"id": "D", "text": "parse() and iterate()"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "load() loads all documents at once, while lazy_load() streams them lazily, which suits large datasets. The other names are not part of the shared interface.",
+      "tags": ["Document Loaders"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/integrations/document_loaders"
+    },
+    {
+      "id": "lc_w04_loaders_splitters_q102",
+      "topicId": "lc_w04_loaders_splitters",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "In a LangChain Document, which attribute holds arbitrary information such as the source of the text?",
+      "options": [
+        {"id": "A", "text": "metadata"},
+        {"id": "B", "text": "page_content"},
+        {"id": "C", "text": "id"},
+        {"id": "D", "text": "embedding"}
+      ],
+      "correctAnswer": ["A"],
+      "explanation": "metadata is a dict that can capture the source and other information. page_content holds the text itself and id is an optional identifier.",
+      "tags": ["Document"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/knowledge-base"
+    },
+    {
+      "id": "lc_w04_loaders_splitters_q103",
+      "topicId": "lc_w04_loaders_splitters",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "Which text splitter do the docs recommend as the starting point for generic text?",
+      "options": [
+        {"id": "A", "text": "CharacterTextSplitter"},
+        {"id": "B", "text": "MarkdownHeaderTextSplitter"},
+        {"id": "C", "text": "RecursiveJsonSplitter"},
+        {"id": "D", "text": "RecursiveCharacterTextSplitter"}
+      ],
+      "correctAnswer": ["D"],
+      "explanation": "RecursiveCharacterTextSplitter balances keeping context intact with managing chunk size. The others target specific formats or a single separator.",
+      "tags": ["Text Splitter"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/integrations/splitters"
+    },
+    {
+      "id": "lc_w04_loaders_splitters_q104",
+      "topicId": "lc_w04_loaders_splitters",
+      "type": "CODE_COMPLETION",
+      "difficulty": "INTERMEDIATE",
+      "title": "Fill in the argument so each split keeps its character offset in the original document as start_index metadata.",
+      "codeSnippet": "from langchain_text_splitters import RecursiveCharacterTextSplitter\n\nsplitter = RecursiveCharacterTextSplitter(\n    chunk_size=1000,\n    chunk_overlap=200,\n    ______=True,\n)\nall_splits = splitter.split_documents(docs)",
+      "options": [
+        {"id": "A", "text": "track_offsets"},
+        {"id": "B", "text": "add_start_index"},
+        {"id": "C", "text": "keep_position"},
+        {"id": "D", "text": "include_index"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "add_start_index=True stores each split's character offset in a start_index metadata field. The other names are not splitter parameters.",
+      "tags": ["Text Splitter", "Metadata"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/knowledge-base"
+    },
+    {
+      "id": "lc_w04_loaders_splitters_q105",
+      "topicId": "lc_w04_loaders_splitters",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "With RecursiveCharacterTextSplitter, a paragraph is longer than chunk_size. What does the splitter do?",
+      "options": [
+        {"id": "A", "text": "It moves to the next level, such as sentences, and continues down to words if necessary"},
+        {"id": "B", "text": "It raises an error because the paragraph does not fit"},
+        {"id": "C", "text": "It truncates the paragraph at chunk_size and drops the rest"},
+        {"id": "D", "text": "It keeps the oversized paragraph as one chunk"}
+      ],
+      "correctAnswer": ["A"],
+      "explanation": "The splitter tries to keep larger units intact and falls back to smaller ones only when a unit exceeds the chunk size.",
+      "tags": ["Text Splitter", "Chunking"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/integrations/splitters"
+    },
+    {
+      "id": "lc_w04_loaders_splitters_q106",
+      "topicId": "lc_w04_loaders_splitters",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "Which of these are examples of document structure-based splitting listed in the docs?",
+      "options": [
+        {"id": "A", "text": "Splitting Markdown based on headers"},
+        {"id": "B", "text": "Splitting HTML using tags"},
+        {"id": "C", "text": "Splitting JSON by object or array elements"},
+        {"id": "D", "text": "Cutting text every fixed number of tokens regardless of structure"}
+      ],
+      "correctAnswer": ["A", "B", "C"],
+      "explanation": "Structure-based splitting follows the logical organization of Markdown, HTML, JSON or code. Fixed token cuts are length-based splitting.",
+      "tags": ["Text Splitter"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/integrations/splitters"
+    },
+    {
+      "id": "lc_w04_vectorstore_retrievers_q101",
+      "topicId": "lc_w04_vectorstore_retrievers",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "Which operations make up LangChain's unified vector store interface?",
+      "options": [
+        {"id": "A", "text": "load, split and retrieve"},
+        {"id": "B", "text": "add_documents, delete and similarity_search"},
+        {"id": "C", "text": "embed_documents, embed_query and invoke"},
+        {"id": "D", "text": "add_texts, drop and search"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "The interface adds documents, deletes them by ID and runs similarity search. embed_* methods belong to the Embeddings interface.",
+      "tags": ["Vector Store"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/integrations/vectorstores"
+    },
+    {
+      "id": "lc_w04_vectorstore_retrievers_q102",
+      "topicId": "lc_w04_vectorstore_retrievers",
+      "type": "CODE_READING",
+      "difficulty": "BEGINNER",
+      "title": "What does this code print?",
+      "codeSnippet": "retriever = vector_store.as_retriever(\n    search_type=\"similarity\",\n    search_kwargs={\"k\": 1},\n)\nout = retriever.batch([\"Question 1\", \"Question 2\"])\nprint(len(out), len(out[0]))",
+      "options": [
+        {"id": "A", "text": "1 2"},
+        {"id": "B", "text": "2 1"},
+        {"id": "C", "text": "2 2"},
+        {"id": "D", "text": "1 1"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "batch() returns one list of documents per query, so the outer list has 2 items. search_kwargs k=1 makes each inner list hold one document.",
+      "tags": ["Retriever", "search_kwargs"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/knowledge-base"
+    },
+    {
+      "id": "lc_w04_vectorstore_retrievers_q103",
+      "topicId": "lc_w04_vectorstore_retrievers",
+      "type": "CODE_COMPLETION",
+      "difficulty": "INTERMEDIATE",
+      "title": "Fill in the keyword argument that restricts the search by metadata.",
+      "codeSnippet": "docs = vector_store.similarity_search(\n    \"query\",\n    k=3,\n    ______={\"source\": \"tweets\"},\n)",
+      "options": [
+        {"id": "A", "text": "where"},
+        {"id": "B", "text": "metadata"},
+        {"id": "C", "text": "filter"},
+        {"id": "D", "text": "match"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "Many vector stores accept k and filter for similarity_search. Support for metadata filtering varies, so check the chosen integration.",
+      "tags": ["Metadata Filtering", "Vector Store"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/integrations/vectorstores"
+    },
+    {
+      "id": "lc_w04_vectorstore_retrievers_q104",
+      "topicId": "lc_w04_vectorstore_retrievers",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "Which search_type of a VectorStoreRetriever filters documents by similarity score?",
+      "options": [
+        {"id": "A", "text": "\"similarity\""},
+        {"id": "B", "text": "\"mmr\""},
+        {"id": "C", "text": "\"score_filter\""},
+        {"id": "D", "text": "\"similarity_score_threshold\""}
+      ],
+      "correctAnswer": ["D"],
+      "explanation": "The supported search types are similarity (default), mmr and similarity_score_threshold. mmr balances similarity with diversity rather than filtering by score.",
+      "tags": ["Retriever", "MMR"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/knowledge-base"
+    },
+    {
+      "id": "lc_w04_vectorstore_retrievers_q105",
+      "topicId": "lc_w04_vectorstore_retrievers",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "Which statement about VectorStore objects and retrievers is correct?",
+      "options": [
+        {"id": "A", "text": "Both are Runnables and support invoke and batch"},
+        {"id": "B", "text": "VectorStore objects are Runnables, retrievers are not"},
+        {"id": "C", "text": "VectorStore objects do not subclass Runnable, while retrievers are Runnables"},
+        {"id": "D", "text": "Neither supports async methods"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "Retrievers are Runnables, so they support invoke and batch in sync and async form. A vector store is not a Runnable, which is why as_retriever exists.",
+      "tags": ["Retriever", "Runnable"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/knowledge-base"
+    },
+    {
+      "id": "lc_w04_vectorstore_retrievers_q106",
+      "topicId": "lc_w04_vectorstore_retrievers",
+      "type": "DEBUGGING",
+      "difficulty": "INTERMEDIATE",
+      "title": "The code should print the similarity score of the top result but fails. What is the bug?",
+      "codeSnippet": "results = vector_store.similarity_search(\n    \"What was Nike's revenue in 2023?\", k=1\n)\ndoc, score = results[0]\nprint(score)",
+      "options": [
+        {"id": "A", "text": "similarity_search returns Document objects without scores; use similarity_search_with_score for (document, score) pairs"},
+        {"id": "B", "text": "k must be at least 2 before a result can be unpacked"},
+        {"id": "C", "text": "The call must be awaited"},
+        {"id": "D", "text": "Scores are only available through as_retriever"}
+      ],
+      "correctAnswer": ["A"],
+      "explanation": "similarity_search returns a list of Document objects. similarity_search_with_score returns documents together with scores.",
+      "tags": ["Vector Store", "Debugging"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/knowledge-base"
+    },
+    {
+      "id": "lc_w04_vectorstore_retrievers_q107",
+      "topicId": "lc_w04_vectorstore_retrievers",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "Which ways of querying a vector store does the semantic search tutorial list?",
+      "options": [
+        {"id": "A", "text": "By vector instead of by string"},
+        {"id": "B", "text": "With similarity scores"},
+        {"id": "C", "text": "By maximum marginal relevance (MMR)"},
+        {"id": "D", "text": "By executing SQL joins across stores"}
+      ],
+      "correctAnswer": ["A", "B", "C"],
+      "explanation": "Vector stores can be queried synchronously or asynchronously, by string or vector, with or without scores, and by similarity or MMR. SQL joins are not part of the interface.",
+      "tags": ["Vector Store", "MMR"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/knowledge-base"
+    },
+    {
+      "id": "lc_w04_vectorstore_retrievers_q108",
+      "topicId": "lc_w04_vectorstore_retrievers",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "ADVANCED",
+      "title": "In the tutorial, similarity_search_with_score returns a score described as a distance metric that varies inversely with similarity. What should you conclude about scores in general?",
+      "options": [
+        {"id": "A", "text": "A higher score always means a more similar document"},
+        {"id": "B", "text": "Score semantics are provider-specific, and here a lower score means a closer match"},
+        {"id": "C", "text": "Scores are always cosine similarities between 0 and 1"},
+        {"id": "D", "text": "Scores are probabilities that the answer is correct"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "The docs note that providers implement different scores. In the tutorial the score is a distance, so smaller values are better, and it is wrong to assume higher is better.",
+      "tags": ["Vector Store", "Scores"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/knowledge-base"
+    },
+    {
+      "id": "lc_w04_rag_architectures_q101",
+      "topicId": "lc_w04_rag_architectures",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "Which two LLM limitations does retrieval address?",
+      "options": [
+        {"id": "A", "text": "Slow tokenization and expensive output tokens"},
+        {"id": "B", "text": "No tool calling and no streaming"},
+        {"id": "C", "text": "Non-deterministic output and refusals"},
+        {"id": "D", "text": "Finite context and static knowledge"}
+      ],
+      "correctAnswer": ["D"],
+      "explanation": "LLMs cannot ingest whole corpora and their training data is frozen in time. Retrieval fetches relevant external knowledge at query time.",
+      "tags": ["RAG"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/retrieval"
+    },
+    {
+      "id": "lc_w04_rag_architectures_q102",
+      "topicId": "lc_w04_rag_architectures",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "According to the docs, what does an agent need in order to enable RAG behavior?",
+      "options": [
+        {"id": "A", "text": "A fine-tuned model"},
+        {"id": "B", "text": "Access to one or more tools that fetch external knowledge"},
+        {"id": "C", "text": "A retrieval step hard-coded before every answer"},
+        {"id": "D", "text": "A vector store that subclasses Runnable"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "Tools such as documentation loaders, web APIs or database queries are enough. A fixed retrieval step describes 2-step RAG instead.",
+      "tags": ["Agentic RAG", "Tools"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/retrieval"
+    },
+    {
+      "id": "lc_w04_rag_architectures_q103",
+      "topicId": "lc_w04_rag_architectures",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "Why is latency generally more predictable in 2-step RAG than in agentic RAG?",
+      "options": [
+        {"id": "A", "text": "The maximum number of LLM calls is known and capped"},
+        {"id": "B", "text": "It never calls a language model"},
+        {"id": "C", "text": "It skips the retrieval step"},
+        {"id": "D", "text": "It always uses a local embedding model"}
+      ],
+      "correctAnswer": ["A"],
+      "explanation": "Retrieval always runs before generation, so the number of LLM calls is bounded. Real latency can still vary with retrieval infrastructure such as API or database response times.",
+      "tags": ["2-Step RAG", "Latency"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/retrieval"
+    },
+    {
+      "id": "lc_w04_rag_architectures_q104",
+      "topicId": "lc_w04_rag_architectures",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "Which are typical components of hybrid RAG?",
+      "options": [
+        {"id": "A", "text": "Query enhancement"},
+        {"id": "B", "text": "Fine-tuning the model weights after every question"},
+        {"id": "C", "text": "Retrieval validation"},
+        {"id": "D", "text": "Answer validation"}
+      ],
+      "correctAnswer": ["A", "C", "D"],
+      "explanation": "Hybrid RAG adds query rewriting, checks on whether retrieved documents are sufficient, and checks on the generated answer. It does not change model weights.",
+      "tags": ["Hybrid RAG"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/retrieval"
+    },
+    {
+      "id": "lc_w04_rag_architectures_q105",
+      "topicId": "lc_w04_rag_architectures",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "ADVANCED",
+      "title": "Which statements about agentic RAG are correct according to the docs?",
+      "options": [
+        {"id": "A", "text": "An agent decides when and how to retrieve during its reasoning"},
+        {"id": "B", "text": "Retrieval is always executed once before generation"},
+        {"id": "C", "text": "It offers high flexibility but lower control and variable latency compared with 2-step RAG"},
+        {"id": "D", "text": "The agent only needs access to tools that can fetch external knowledge"}
+      ],
+      "correctAnswer": ["A", "C", "D"],
+      "explanation": "Agentic RAG trades control and predictable latency for flexibility. Retrieval that always runs before generation is the definition of 2-step RAG.",
+      "tags": ["Agentic RAG", "2-Step RAG"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/retrieval"
+    },
+    {
+      "id": "lc_w04_rag_architectures_q106",
+      "topicId": "lc_w04_rag_architectures",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "ADVANCED",
+      "title": "You already have a knowledge base in a SQL database. Which options does the retrieval guide give you without rebuilding it?",
+      "options": [
+        {"id": "A", "text": "Connect it as a tool for an agent in agentic RAG"},
+        {"id": "B", "text": "Query it and supply the retrieved content as context to the LLM (2-step RAG)"},
+        {"id": "C", "text": "Re-ingest it into a vector store first, because RAG requires embeddings"},
+        {"id": "D", "text": "Replace it with an InMemoryVectorStore"}
+      ],
+      "correctAnswer": ["A", "B"],
+      "explanation": "An existing SQL database, document database, CRM or internal documentation system does not need to be rebuilt. It can be an agent tool or a source for 2-step RAG context.",
+      "tags": ["Knowledge Base", "RAG"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/retrieval"
+    },
+    {
+      "id": "lc_w04_grounding_sources_q101",
+      "topicId": "lc_w04_grounding_sources",
+      "type": "CODE_READING",
+      "difficulty": "INTERMEDIATE",
+      "title": "Which RAG architecture does this code implement?",
+      "codeSnippet": "@tool\ndef fetch_url(url: str) -> str:\n    \"\"\"Fetch text content from a URL\"\"\"\n    ...\n\nagent = create_agent(\n    model=\"claude-sonnet-4-6\",\n    tools=[fetch_url],\n    system_prompt=\"Use fetch_url when you need to fetch information \"\n                  \"from a web-page; quote relevant snippets.\",\n)",
+      "options": [
+        {"id": "A", "text": "2-step RAG, because retrieval always runs before generation"},
+        {"id": "B", "text": "Hybrid RAG, because it validates the final answer"},
+        {"id": "C", "text": "None, because RAG requires a vector store"},
+        {"id": "D", "text": "Agentic RAG, because the agent decides when to call the retrieval tool"}
+      ],
+      "correctAnswer": ["D"],
+      "explanation": "The agent chooses whether to call fetch_url. The docs say a tool that fetches external knowledge is all an agent needs for RAG, so a vector store is not required.",
+      "tags": ["Agentic RAG", "Tools"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/retrieval"
+    },
+    {
+      "id": "lc_w04_grounding_sources_q102",
+      "topicId": "lc_w04_grounding_sources",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "ADVANCED",
+      "title": "Why are RAG applications susceptible to indirect prompt injection?",
+      "options": [
+        {"id": "A", "text": "Retrieved chunks share the context window with the system prompt, so the model may follow instructions embedded in them"},
+        {"id": "B", "text": "Vector stores execute code found inside documents"},
+        {"id": "C", "text": "Embedding models leak API keys into the chunks"},
+        {"id": "D", "text": "Text splitters reorder the system prompt"}
+      ],
+      "correctAnswer": ["A"],
+      "explanation": "Retrieved text that resembles instructions sits in the same context as your prompt. The docs state that no prompt or delimiter strategy fully prevents this, so outputs should be validated.",
+      "tags": ["Security", "Prompt Injection"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/deepagents/rag"
+    },
+    {
+      "id": "lc_w04_grounding_sources_q103",
+      "topicId": "lc_w04_grounding_sources",
+      "type": "DEBUGGING",
+      "difficulty": "ADVANCED",
+      "title": "The system prompt asks the agent to cite the source of each claim, but it never can. What is the bug?",
+      "codeSnippet": "@tool\ndef search_docs(query: str) -> str:\n    \"\"\"Search the documentation.\"\"\"\n    docs = vector_store.similarity_search(query, k=4)\n    return \"\\n\\n\".join(d.page_content for d in docs)\n\nsystem_prompt = (\n    \"Answer from the docs and cite the source URL of each claim.\"\n)",
+      "options": [
+        {"id": "A", "text": "k=4 returns too many chunks to cite"},
+        {"id": "B", "text": "The tool returns only page_content and drops doc.metadata, so the model never sees the sources"},
+        {"id": "C", "text": "similarity_search does not return metadata"},
+        {"id": "D", "text": "The docstring is too short for the model to call the tool"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "Retrieved Documents carry metadata such as source, but the tool throws it away. The tutorial tool prefixes each chunk with a header built from doc.metadata.get('source').",
+      "tags": ["Citations", "Debugging"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/deepagents/rag"
+    },
+    {
+      "id": "lc_w04_grounding_sources_q104",
+      "topicId": "lc_w04_grounding_sources",
+      "type": "CODE_READING",
+      "difficulty": "ADVANCED",
+      "title": "What does the agent receive as the result of this retrieval tool, and why is it designed this way?",
+      "codeSnippet": "docs = vector_store.similarity_search(query, k=4)\nuploads, paths = [], []\nfor i, doc in enumerate(docs, start=1):\n    path = f\"/retrieved/{batch_id}/chunk_{i}.md\"\n    uploads.append((path, doc.page_content.encode(\"utf-8\")))\n    paths.append(path)\nbackend.upload_files(uploads)\nreturn \"Saved chunks:\\n\" + \"\\n\".join(paths)",
+      "options": [
+        {"id": "A", "text": "The full text of all four chunks"},
+        {"id": "B", "text": "The embedding vectors of the chunks"},
+        {"id": "C", "text": "File paths, so chunk text stays out of the orchestrator context and subagents can analyze it"},
+        {"id": "D", "text": "Nothing, because the function never returns"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "The chunks are written to the agent filesystem and only the paths are returned. The orchestrator can then delegate analysis without loading full chunk text into its own context.",
+      "tags": ["Agentic RAG", "Deep Agents"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/deepagents/rag"
+    },
+    {
+      "id": "lc_w04_embeddings_q101",
+      "topicId": "lc_w04_embeddings",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "Which Embeddings method turns a single query string into one vector?",
+      "options": [
+        {"id": "A", "text": "embed_documents"},
+        {"id": "B", "text": "embed_query"},
+        {"id": "C", "text": "embed_text"},
+        {"id": "D", "text": "vectorize"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "embed_query(text) returns one vector, while embed_documents(texts) embeds a list of documents and returns a list of vectors.",
+      "tags": ["Embeddings"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/integrations/embeddings"
+    },
+    {
+      "id": "lc_w04_embeddings_q102",
+      "topicId": "lc_w04_embeddings",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "CacheBackedEmbeddings.from_bytes_store is called with only the underlying embedder, a document_embedding_cache and a namespace. Which embeddings are cached?",
+      "options": [
+        {"id": "A", "text": "Both document and query embeddings"},
+        {"id": "B", "text": "Only query embeddings"},
+        {"id": "C", "text": "Only document embeddings, because query embeddings are not cached by default"},
+        {"id": "D", "text": "Nothing until batch_size is set"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "Query embeddings are cached only if you pass query_embedding_cache. Setting the namespace, for example to the model name, avoids collisions between models.",
+      "tags": ["Embeddings", "Caching"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/integrations/embeddings"
+    },
+    {
+      "id": "lc_w04_embeddings_q103",
+      "topicId": "lc_w04_embeddings",
+      "type": "CODE_COMPLETION",
+      "difficulty": "ADVANCED",
+      "title": "This E5 model expects different prefixes for documents and queries. Fill in the argument that sets the query prefix.",
+      "codeSnippet": "from langchain_huggingface import HuggingFaceEmbeddings\n\nembeddings = HuggingFaceEmbeddings(\n    model_name=\"intfloat/e5-large-v2\",\n    encode_kwargs={\"prompt\": \"passage: \"},\n    ______={\"prompt\": \"query: \"},\n)",
+      "options": [
+        {"id": "A", "text": "search_encode_kwargs"},
+        {"id": "B", "text": "query_kwargs"},
+        {"id": "C", "text": "prompt_kwargs"},
+        {"id": "D", "text": "query_encode_kwargs"}
+      ],
+      "correctAnswer": ["D"],
+      "explanation": "The docs pass the document prompt through encode_kwargs and the query prompt through query_encode_kwargs. Using the wrong prefix at query time is a common quality regression.",
+      "tags": ["Embeddings", "HuggingFace"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/integrations/embeddings"
+    },
+    {
+      "id": "lc_w04_embeddings_q104",
+      "topicId": "lc_w04_embeddings",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "ADVANCED",
+      "title": "Which kind of query do dense embeddings handle less well, motivating hybrid retrieval with BM25 or sparse indexes?",
+      "options": [
+        {"id": "A", "text": "Long natural-language questions"},
+        {"id": "B", "text": "Queries in a single language"},
+        {"id": "C", "text": "Exact-match queries such as product codes, named entities and code identifiers"},
+        {"id": "D", "text": "Queries about recent events"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "Dense vectors capture semantic similarity but can miss exact keywords. Hybrid retrieval combines a dense index with BM25 or a sparse neural index to cover both cases.",
+      "tags": ["Embeddings", "Hybrid Retrieval"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/integrations/embeddings"
+    }
+  ]
+}

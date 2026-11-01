@@ -1,0 +1,180 @@
+{
+  "schemaVersion": 1,
+  "week": 1,
+  "module": "LangChain",
+  "topics": [
+    {"id": "lc_w01_tokens", "name": "Tokens & Context Window", "description": "How LLMs read text and what limits a single request.", "notes": [
+      "## 什么是 Token",
+      "- Token 是模型读取和生成文本的基本单位，可能是一个词、词的一部分或一个符号。",
+      "- 不同模型的分词器不同，同一段文字的 token 数也不同。",
+      "- 计费和长度限制都以 token 计算。",
+      "## 上下文窗口（Context Window）",
+      "- 单次请求中模型能处理的 token 上限，包含输入（提示词、历史消息、检索内容）和输出。",
+      "- 超出上限时需要截断历史、摘要压缩，或只检索相关片段（RAG）。",
+      "## 实践要点",
+      "- 估算 token 用量，并为输出预留空间。",
+      "- 不要把整份文档直接塞进提示词，优先检索相关部分。"
+    ]},
+    {"id": "lc_w01_messages", "name": "Chat Models & Messages", "description": "Calling chat models and the message types LangChain uses.", "notes": [
+      "## 消息类型",
+      "- SystemMessage：设定角色和规则。",
+      "- HumanMessage：用户输入。",
+      "- AIMessage：模型回复，工具调用请求放在 tool_calls 中。",
+      "- ToolMessage：把工具执行结果返回给模型。",
+      "## 调用聊天模型",
+      "```python",
+      "from langchain.chat_models import init_chat_model",
+      "",
+      "model = init_chat_model(\"openai:gpt-4o-mini\", temperature=0)",
+      "response = model.invoke(\"Say hello in one word.\")",
+      "print(response.content)",
+      "```",
+      "- invoke 接受字符串或消息列表，返回 AIMessage。",
+      "- 文本内容通过 response.content 读取；AIMessage 是对象，不能像 dict 一样取值。"
+    ]},
+    {"id": "lc_w01_sampling", "name": "Sampling Parameters", "description": "How parameters such as temperature affect output.", "notes": [
+      "## Temperature",
+      "- 控制采样随机性：越低越确定，越高越多样。",
+      "- 需要稳定输出时使用较低值（如 0）。",
+      "- 即使 temperature=0，也不保证每次逐字相同。",
+      "## 其他常见参数",
+      "- max_tokens：限制输出长度。",
+      "- top_p：只在累计概率最高的一批候选 token 中采样。",
+      "- 不同提供商支持的参数名称和范围可能不同，以官方文档为准。"
+    ]}
+  ],
+  "questions": [
+    {
+      "id": "lc_w01_tokens_q001",
+      "topicId": "lc_w01_tokens",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "In the context of LLMs, what is a token?",
+      "options": [
+        {"id": "A", "text": "A secret key used to authenticate API calls"},
+        {"id": "B", "text": "A unit of text (a word, word piece or symbol) that the model reads and generates"},
+        {"id": "C", "text": "A single neuron in the network"},
+        {"id": "D", "text": "One complete sentence"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "Models split text into tokens, which are often word pieces. Pricing and length limits are measured in tokens. The API-key meaning is a different use of the word.",
+      "tags": ["Tokens", "Fundamentals"],
+      "technology": "LLM",
+      "apiVersion": "v1"
+    },
+    {
+      "id": "lc_w01_tokens_q002",
+      "topicId": "lc_w01_tokens",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "What does a model's context window limit?",
+      "options": [
+        {"id": "A", "text": "The number of tokens the model can handle in one request (prompt and generated output together)"},
+        {"id": "B", "text": "The number of requests per day"},
+        {"id": "C", "text": "The number of tools an agent can register"},
+        {"id": "D", "text": "The size of the model weights"}
+      ],
+      "correctAnswer": ["A"],
+      "explanation": "The context window bounds how much text the model can attend to in a single call. Long conversations or documents must be trimmed, summarized or retrieved selectively. Rate limits are a separate provider setting.",
+      "tags": ["Context Window"],
+      "technology": "LLM",
+      "apiVersion": "v1"
+    },
+    {
+      "id": "lc_w01_messages_q001",
+      "topicId": "lc_w01_messages",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "Which of the following are standard LangChain message types?",
+      "options": [
+        {"id": "A", "text": "SystemMessage"},
+        {"id": "B", "text": "HumanMessage"},
+        {"id": "C", "text": "AIMessage"},
+        {"id": "D", "text": "ToolMessage"},
+        {"id": "E", "text": "DatabaseMessage"}
+      ],
+      "correctAnswer": ["A", "B", "C", "D"],
+      "explanation": "SystemMessage sets instructions, HumanMessage is user input, AIMessage is the model reply and ToolMessage carries a tool result back to the model. DatabaseMessage does not exist.",
+      "tags": ["Messages"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/overview"
+    },
+    {
+      "id": "lc_w01_messages_q002",
+      "topicId": "lc_w01_messages",
+      "type": "CODE_READING",
+      "difficulty": "BEGINNER",
+      "title": "What type of object is printed?",
+      "codeSnippet": "from langchain.chat_models import init_chat_model\n\nmodel = init_chat_model(\"openai:gpt-4o-mini\", temperature=0)\nresponse = model.invoke(\"Say hello in one word.\")\nprint(type(response).__name__)",
+      "options": [
+        {"id": "A", "text": "str"},
+        {"id": "B", "text": "AIMessage"},
+        {"id": "C", "text": "dict"},
+        {"id": "D", "text": "HumanMessage"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "Chat models return an AIMessage. The text is available as response.content. A plain string input is converted to a HumanMessage before the call.",
+      "tags": ["Chat Models", "init_chat_model"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/overview"
+    },
+    {
+      "id": "lc_w01_messages_q003",
+      "topicId": "lc_w01_messages",
+      "type": "CODE_COMPLETION",
+      "difficulty": "BEGINNER",
+      "title": "Fill in the blank so the user's question is sent as a user message.",
+      "codeSnippet": "from langchain_core.messages import HumanMessage, SystemMessage\n\nmessages = [\n    SystemMessage(\"You are a concise assistant.\"),\n    ______(\"What is a token?\"),\n]\nresponse = model.invoke(messages)",
+      "options": [
+        {"id": "A", "text": "HumanMessage"},
+        {"id": "B", "text": "AIMessage"},
+        {"id": "C", "text": "ToolMessage"},
+        {"id": "D", "text": "FunctionMessage"}
+      ],
+      "correctAnswer": ["A"],
+      "explanation": "User input is represented by HumanMessage. AIMessage is for model output and ToolMessage is for tool results.",
+      "tags": ["Messages"],
+      "technology": "LangChain",
+      "apiVersion": "v1"
+    },
+    {
+      "id": "lc_w01_messages_q004",
+      "topicId": "lc_w01_messages",
+      "type": "DEBUGGING",
+      "difficulty": "BEGINNER",
+      "title": "This code raises a TypeError. What is the cause?",
+      "codeSnippet": "model = init_chat_model(\"openai:gpt-4o-mini\")\nreply = model.invoke(\"Hello\")\nprint(reply[\"content\"])",
+      "options": [
+        {"id": "A", "text": "reply is an AIMessage object, not a dict; use reply.content"},
+        {"id": "B", "text": "invoke() only accepts a list of messages, never a string"},
+        {"id": "C", "text": "init_chat_model cannot create OpenAI models"},
+        {"id": "D", "text": "print() cannot display model output"}
+      ],
+      "correctAnswer": ["A"],
+      "explanation": "AIMessage is an object and is not subscriptable. Access the text with reply.content. invoke() accepts a plain string as well as a list of messages.",
+      "tags": ["Messages", "Debugging"],
+      "technology": "LangChain",
+      "apiVersion": "v1"
+    },
+    {
+      "id": "lc_w01_sampling_q001",
+      "topicId": "lc_w01_sampling",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "What is the typical effect of setting temperature=0?",
+      "options": [
+        {"id": "A", "text": "The model stops using its context"},
+        {"id": "B", "text": "Output becomes more deterministic and less random, though identical output is not strictly guaranteed"},
+        {"id": "C", "text": "The model answers faster by skipping tokens"},
+        {"id": "D", "text": "The model always returns an empty string"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "Lower temperature makes the model pick high-probability tokens more consistently. Providers may still show small variation, so do not rely on bit-identical output.",
+      "tags": ["Temperature", "Sampling"],
+      "technology": "LLM",
+      "apiVersion": "v1"
+    }
+  ]
+}

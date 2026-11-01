@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "week": 4,
+  "module": "LangChain",
+  "topics": [
+    {"id": "lc_w04_embeddings", "name": "Embeddings & Vector Stores", "description": "Representing text as vectors for similarity search.", "notes": [
+      "## Embedding",
+      "- 把文本转换成向量，语义相近的文本向量距离更近。",
+      "- 同一套检索中，文档和查询必须使用同一个 embedding 模型。",
+      "## Vector Store",
+      "- 保存文档向量及原文、元数据，支持查询最相似的 k 个结果。",
+      "- 相似度常用余弦相似度或点积。"
+    ]},
+    {"id": "lc_w04_pipeline", "name": "Retrieval Pipeline", "description": "Indexing and retrieval steps of a RAG system.", "notes": [
+      "## 索引阶段（离线）",
+      "- 加载文档，切分成块（chunk），向量化，写入向量库。",
+      "- 块太大噪声多，块太小会丢失上下文，需要结合重叠长度调整。",
+      "## 检索与生成（在线）",
+      "- 把用户问题向量化，检索最相关的块，拼入提示词交给模型回答。",
+      "- RAG 通过提供外部上下文来回答，不需要修改模型权重。",
+      "- 可要求模型基于检索内容作答并引用来源，以减少幻觉。"
+    ]}
+  ],
+  "questions": [
+    {"id": "lc_w04_embeddings_q002", "topicId": "lc_w04_embeddings", "type": "SINGLE_CHOICE", "difficulty": "BEGINNER",
+      "title": "Which rule must hold when using embeddings for retrieval?",
+      "options": [{"id": "A", "text": "Documents and queries must be embedded with the same embedding model"}, {"id": "B", "text": "Queries must be longer than documents"}, {"id": "C", "text": "Each document needs its own embedding model"}, {"id": "D", "text": "Embeddings must be regenerated for every query"}],
+      "correctAnswer": ["A"], "explanation": "Vectors from different models live in different spaces and cannot be compared meaningfully.",
+      "tags": ["Embeddings"], "technology": "LangChain", "apiVersion": "v1"},
+    {"id": "lc_w04_embeddings_q003", "topicId": "lc_w04_embeddings", "type": "CODE_READING", "difficulty": "BEGINNER",
+      "title": "The store holds 10 documents. What is printed?",
+      "codeSnippet": "results = vector_store.similarity_search(\n    \"How do I reset my password?\", k=3\n)\nprint(len(results))",
+      "options": [{"id": "A", "text": "3"}, {"id": "B", "text": "1"}, {"id": "C", "text": "10"}, {"id": "D", "text": "0, because the query must be embedded manually first"}],
+      "correctAnswer": ["A"], "explanation": "k is the number of nearest documents to return. The store embeds the query itself.",
+      "tags": ["Vector Store"], "technology": "LangChain", "apiVersion": "v1"},
+    {"id": "lc_w04_embeddings_q004", "topicId": "lc_w04_embeddings", "type": "SINGLE_CHOICE", "difficulty": "INTERMEDIATE",
+      "title": "A cosine similarity close to 1 between two embeddings means:",
+      "options": [{"id": "A", "text": "The vectors point in nearly the same direction, so the texts are semantically similar"}, {"id": "B", "text": "The texts contain exactly the same characters"}, {"id": "C", "text": "The texts are unrelated"}, {"id": "D", "text": "One text is a translation error"}],
+      "correctAnswer": ["A"], "explanation": "Cosine similarity compares direction. Values near 1 indicate similar meaning, not identical wording.",
+      "tags": ["Embeddings", "Similarity"], "technology": "LangChain", "apiVersion": "v1"},
+    {"id": "lc_w04_pipeline_q002", "topicId": "lc_w04_pipeline", "type": "CODE_COMPLETION", "difficulty": "INTERMEDIATE",
+      "title": "Fill in the parameter that keeps context across neighboring chunks.",
+      "codeSnippet": "from langchain_text_splitters import RecursiveCharacterTextSplitter\n\nsplitter = RecursiveCharacterTextSplitter(\n    chunk_size=1000, ______=200\n)\nchunks = splitter.split_documents(docs)",
+      "options": [{"id": "A", "text": "chunk_overlap"}, {"id": "B", "text": "chunk_stride"}, {"id": "C", "text": "chunk_margin"}, {"id": "D", "text": "overlap_size"}],
+      "correctAnswer": ["A"], "explanation": "chunk_overlap sets how many characters neighboring chunks share.",
+      "tags": ["Text Splitter"], "technology": "LangChain", "apiVersion": "v1"},
+    {"id": "lc_w04_pipeline_q003", "topicId": "lc_w04_pipeline", "type": "SINGLE_CHOICE", "difficulty": "INTERMEDIATE",
+      "title": "Why do text splitters usually use a chunk overlap?",
+      "options": [{"id": "A", "text": "So that information at a chunk boundary is not lost"}, {"id": "B", "text": "To reduce the number of chunks"}, {"id": "C", "text": "To make embeddings cheaper"}, {"id": "D", "text": "To remove duplicate documents"}],
+      "correctAnswer": ["A"], "explanation": "A sentence cut in half at a boundary would otherwise be unreadable in both chunks. Overlap preserves context at the cost of some duplication.",
+      "tags": ["Chunking"], "technology": "LangChain", "apiVersion": "v1"},
+    {"id": "lc_w04_pipeline_q004", "topicId": "lc_w04_pipeline", "type": "DEBUGGING", "difficulty": "INTERMEDIATE",
+      "title": "The answers ignore the knowledge base. What is the bug?",
+      "codeSnippet": "docs = retriever.invoke(question)\nanswer = model.invoke(question)\nprint(answer.content)",
+      "options": [{"id": "A", "text": "The retrieved documents are never added to the prompt"}, {"id": "B", "text": "retriever.invoke needs a list of questions"}, {"id": "C", "text": "The model must be fine-tuned on docs"}, {"id": "D", "text": "print() hides the context"}],
+      "correctAnswer": ["A"], "explanation": "Retrieval only helps if the retrieved text is placed in the prompt sent to the model.",
+      "tags": ["RAG", "Debugging"], "technology": "LangChain", "apiVersion": "v1"},
+    {
+      "id": "lc_w04_embeddings_q001",
+      "topicId": "lc_w04_embeddings",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "What property makes embeddings useful for retrieval?",
+      "options": [
+        {"id": "A", "text": "Texts with similar meaning are mapped to vectors that are close together"},
+        {"id": "B", "text": "They compress text losslessly so it can be restored exactly"},
+        {"id": "C", "text": "They remove the need for a vector store"},
+        {"id": "D", "text": "They translate text into SQL"}
+      ],
+      "correctAnswer": ["A"],
+      "explanation": "Similarity search compares the query vector with stored document vectors and returns the nearest ones.",
+      "tags": ["Embeddings"],
+      "technology": "LangChain",
+      "apiVersion": "v1"
+    },
+    {
+      "id": "lc_w04_pipeline_q001",
+      "topicId": "lc_w04_pipeline",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "Which steps are typically part of the indexing phase of a RAG system?",
+      "options": [
+        {"id": "A", "text": "Load documents"},
+        {"id": "B", "text": "Split documents into chunks"},
+        {"id": "C", "text": "Embed the chunks and store them in a vector store"},
+        {"id": "D", "text": "Fine-tune the base model weights on every document"}
+      ],
+      "correctAnswer": ["A", "B", "C"],
+      "explanation": "Indexing loads, splits, embeds and stores content. Retrieval later finds relevant chunks and passes them to the model as context. RAG does not require changing model weights.",
+      "tags": ["RAG", "Indexing"],
+      "technology": "LangChain",
+      "apiVersion": "v1"
+    }
+  ]
+}

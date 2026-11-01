@@ -1,0 +1,662 @@
+{
+  "schemaVersion": 1,
+  "week": 8,
+  "module": "LangGraph",
+  "topics": [
+    {
+      "id": "lg_w08_rules",
+      "name": "Rules of Interrupts",
+      "description": "Rules that keep interrupt() behavior correct across resumes.",
+      "notes": [
+        "## 为什么需要规则",
+        "- interrupt() 通过抛出一个特殊异常来暂停执行；恢复时节点会从头重新执行，而不是从 interrupt() 那一行继续。",
+        "## 不要用裸 try/except 包裹 interrupt",
+        "- 裸 except 会捕获该特殊异常，interrupt 就不会传回图。",
+        "- 做法：先调用 interrupt，再单独处理易出错的代码；或只捕获具体的异常类型。",
+        "## 不要改变 interrupt 的调用顺序",
+        "- 同一节点有多个 interrupt 时，LangGraph 为该任务保存一个恢复值列表，匹配严格按索引进行。",
+        "- 不要有条件地跳过 interrupt，也不要用每次执行结果不确定的逻辑循环调用它（包括 while True 校验循环）。",
+        "```python",
+        "def node_a(state):",
+        "    name = interrupt(\"What's your name?\")",
+        "    age = interrupt(\"What's your age?\")",
+        "    return {\"name\": name, \"age\": age}",
+        "```",
+        "## payload 必须可序列化",
+        "- 传简单的 JSON 可序列化值：字符串、数字、布尔值、含简单值的 dict。",
+        "- 不要传函数或类实例。",
+        "## interrupt 之前的副作用要幂等",
+        "- 推荐：使用 upsert 等幂等操作；把副作用放在 interrupt 之后；或拆到单独的节点。",
+        "- 不要在 interrupt 之前新建记录或向列表追加，否则每次恢复都会重复。",
+        "- 即使放在审批之后，节点失败后重试仍可能重复副作用，需要幂等或在外部系统去重。"
+      ]
+    },
+    {
+      "id": "lg_w08_patterns",
+      "name": "Common Interrupt Patterns",
+      "description": "Approve/reject, review and edit, tool approval, input validation and typed resume values.",
+      "notes": [
+        "## 常见模式",
+        "- 审批/拒绝：在关键操作前 interrupt，根据返回值用 Command(goto=...) 路由。",
+        "```python",
+        "def approval_node(state) -> Command[Literal[\"proceed\", \"cancel\"]]:",
+        "    ok = interrupt({\"question\": \"Proceed?\", \"details\": state[\"action_details\"]})",
+        "    return Command(goto=\"proceed\" if ok else \"cancel\")",
+        "```",
+        "- 恢复时传 True 表示批准，传 False 表示拒绝。",
+        "- 审阅并编辑状态：把当前内容放进 payload，把人工修改后的内容作为恢复值写回状态。",
+        "- 工具内 interrupt：把审批逻辑放在工具里，恢复值可以覆盖工具入参（如 response.get(\"subject\", subject)）。",
+        "## 校验人工输入",
+        "- 推荐：每次节点调用只调用一次 interrupt，把错误提示存入状态，用条件边回到该节点重新提问。",
+        "- 避免在单个节点里用 while True + interrupt，因为每次恢复都会重放之前的所有迭代。",
+        "## 类型化的恢复值",
+        "- interrupt(..., response_schema=Model) 描述恢复时期望的输入（需要 langgraph>=1.2.12）。",
+        "- 传入 Pydantic 模型、TypedDict 或 dataclass 时会校验，无效输入抛出 pydantic.ValidationError，可用同一 thread_id 重新恢复。",
+        "- 传 JSON Schema 字典时，LangGraph 原样暴露但不校验恢复值。",
+        "## Command 的用法",
+        "- Command(resume=...) 是唯一用于 invoke()/stream() 输入的 Command 形式。",
+        "- update、goto、graph 参数用于节点函数的返回值；继续多轮对话请传普通输入字典。"
+      ]
+    },
+    {
+      "id": "lg_w08_breakpoints",
+      "name": "Breakpoints, Streaming and Time Travel",
+      "description": "Static vs dynamic interrupts, parallel interrupts, streaming, subgraphs and time travel.",
+      "notes": [
+        "## 静态断点 vs 动态 interrupt",
+        "- 静态断点在编译或运行时通过 interrupt_before / interrupt_after 指定节点，主要用于调试，需要 checkpointer。",
+        "- 文档不建议把静态断点用于 human-in-the-loop，应使用 interrupt() 函数。",
+        "- 动态 interrupt 可以放在代码任意位置，并可根据业务逻辑有条件触发。",
+        "```python",
+        "graph = builder.compile(interrupt_before=[\"node_a\"], checkpointer=cp)",
+        "graph.invoke(inputs, config=config)   # 运行到断点",
+        "graph.invoke(None, config=config)     # 传 None 继续到下一个断点",
+        "```",
+        "## 多个 interrupt 与流式输出",
+        "- invoke() 默认把 payload 放在 result[\"__interrupt__\"]；event streaming 用 stream.interrupted / stream.interrupts。",
+        "- 并行分支同时 interrupt 时，用 {interrupt.id: 恢复值} 字典一次性恢复。",
+        "- invoke(version=\"v2\") 返回 GraphOutput，用 .interrupts 读取（字典式访问已弃用）。",
+        "## 子图与时间旅行",
+        "- 在节点里以函数方式调用子图时，父节点和子图节点都会从各自节点开头重新执行。",
+        "- Replay/Fork 会重新执行检查点之后的节点，包括 LLM 调用、API 请求和 interrupt（结果可能不同）。",
+        "- 从 interrupt 前的检查点 replay 或 fork，会再次暂停并等待新的 Command(resume=...)。",
+        "- update_state 不会回滚线程，而是创建分支出的新检查点。"
+      ]
+    },
+    {
+      "id": "lg_w08_hitl_middleware",
+      "name": "HumanInTheLoopMiddleware",
+      "description": "Approve, edit, reject or respond to agent tool calls with middleware.",
+      "notes": [
+        "## HumanInTheLoopMiddleware",
+        "- 通过 create_agent 的 middleware 列表添加，按 interrupt_on 策略在工具执行前暂停；需要 checkpointer。",
+        "```python",
+        "HumanInTheLoopMiddleware(",
+        "    interrupt_on={",
+        "        \"write_file\": True,",
+        "        \"execute_sql\": {\"allowed_decisions\": [\"approve\", \"reject\"]},",
+        "        \"read_data\": False,",
+        "    },",
+        ")",
+        "```",
+        "- True：使用默认配置（允许所有决策）；False：自动批准；字典：自定义 allowed_decisions。",
+        "## 决策类型",
+        "- approve：按原参数执行；edit：修改参数后执行；reject：不执行并把反馈返回给 agent。",
+        "- respond：把人的回复直接作为工具结果（用于 ask_user 类工具）。",
+        "- 拒绝操作请用 reject，不要用 respond，因为 respond 的 message 会被当作成功的工具结果。",
+        "- 编辑参数要保守，大幅修改可能让模型重新评估并多次执行工具。",
+        "## 恢复与模式",
+        "- 默认 batched 模式：每个模型回合一个 interrupt，用 Command(resume={\"decisions\": [...]}) 按顺序回答。",
+        "- per_call 模式（langchain>=1.4.6）：每个被审核的调用各一个 interrupt，用 {interrupt.id: 决策} 回答，未受限调用立即执行。",
+        "- when 谓词（langchain>=1.3.3）：返回 True 才暂停；恢复时会再次运行，必须对同一调用返回相同结果。"
+      ]
+    }
+  ],
+  "questions": [
+    {
+      "id": "lg_w08_rules_q101",
+      "topicId": "lg_w08_rules",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "Why should interrupt() not be wrapped in a bare try/except block?",
+      "options": [
+        {"id": "A", "text": "The checkpointer refuses to save state inside a try block"},
+        {"id": "B", "text": "interrupt() can only return strings when wrapped"},
+        {"id": "C", "text": "interrupt() pauses by raising a special exception, and a bare except would swallow it"},
+        {"id": "D", "text": "Python does not allow exceptions inside graph nodes"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "interrupt() pauses execution by throwing a special exception that the runtime catches. A bare try/except catches it first, so the interrupt never reaches the graph.",
+      "tags": ["Interrupt", "Rules"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/interrupts"
+    },
+    {
+      "id": "lg_w08_rules_q102",
+      "topicId": "lg_w08_rules",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "Which values are safe to pass as the payload of interrupt()?",
+      "options": [
+        {"id": "A", "text": "A plain string"},
+        {"id": "B", "text": "A dict that contains simple values such as strings and lists"},
+        {"id": "C", "text": "A boolean such as True"},
+        {"id": "D", "text": "A validation function stored in the dict"}
+      ],
+      "correctAnswer": ["A", "B", "C"],
+      "explanation": "Payloads should be simple, JSON-serializable values. Functions and class instances cannot be serialized by every checkpointer.",
+      "tags": ["Interrupt", "Rules", "Serialization"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/interrupts"
+    },
+    {
+      "id": "lg_w08_rules_q103",
+      "topicId": "lg_w08_rules",
+      "type": "DEBUGGING",
+      "difficulty": "INTERMEDIATE",
+      "title": "This node never pauses for human input. What is the problem?",
+      "codeSnippet": "def node_a(state: State):\n    try:\n        name = interrupt(\"What's your name?\")\n    except Exception as e:\n        print(e)\n    return state",
+      "options": [
+        {"id": "A", "text": "The except Exception clause catches the special interrupt exception, so the interrupt is not passed back to the graph"},
+        {"id": "B", "text": "interrupt() requires a second argument naming the node"},
+        {"id": "C", "text": "A node using interrupt() must return a Command"},
+        {"id": "D", "text": "print() cannot be used in a node that contains an interrupt"}
+      ],
+      "correctAnswer": ["A"],
+      "explanation": "The interrupt is implemented as an exception, and a broad except block swallows it. Call interrupt() outside such a block or catch only specific exception types.",
+      "tags": ["Interrupt", "Rules", "Debugging"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/interrupts"
+    },
+    {
+      "id": "lg_w08_rules_q104",
+      "topicId": "lg_w08_rules",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "Which statements about several interrupt() calls in one node are true?",
+      "options": [
+        {"id": "A", "text": "On resume the node restarts from its beginning"},
+        {"id": "B", "text": "Resume values are matched to interrupt calls strictly by index"},
+        {"id": "C", "text": "The order of interrupt calls should be the same on every execution of the node"},
+        {"id": "D", "text": "Resume values are matched by comparing the interrupt payload text"}
+      ],
+      "correctAnswer": ["A", "B", "C"],
+      "explanation": "LangGraph keeps a per-task list of resume values and matches them by index, so the call order must stay consistent. It does not compare payloads.",
+      "tags": ["Interrupt", "Rules", "Ordering"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/interrupts"
+    },
+    {
+      "id": "lg_w08_rules_q105",
+      "topicId": "lg_w08_rules",
+      "type": "CODE_READING",
+      "difficulty": "ADVANCED",
+      "title": "Why is this node unsafe if state.get('needs_age') can be different on the first run and on a resume?",
+      "codeSnippet": "def node_a(state: State):\n    name = interrupt(\"What's your name?\")\n    if state.get(\"needs_age\"):\n        age = interrupt(\"What's your age?\")\n    city = interrupt(\"What's your city?\")\n    return {\"name\": name, \"city\": city}",
+      "options": [
+        {"id": "A", "text": "A node may call interrupt() only once"},
+        {"id": "B", "text": "The variable age is unused, so Python raises an error"},
+        {"id": "C", "text": "city must always be asked before age"},
+        {"id": "D", "text": "Skipping an interrupt conditionally changes the call order, so index-based resume values can be paired with the wrong call"}
+      ],
+      "correctAnswer": ["D"],
+      "explanation": "Resume values are matched to interrupt calls by index. If an interrupt is skipped in one execution but not in another, the stored answers no longer line up with the calls.",
+      "tags": ["Interrupt", "Rules", "Ordering"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/interrupts"
+    },
+    {
+      "id": "lg_w08_rules_q106",
+      "topicId": "lg_w08_rules",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "Which practices does the documentation recommend for side effects around interrupt()?",
+      "options": [
+        {"id": "A", "text": "Use an idempotent operation such as an upsert before interrupt()"},
+        {"id": "B", "text": "Place the side effect after the interrupt() call"},
+        {"id": "C", "text": "Move the side effect into a separate node that runs after approval"},
+        {"id": "D", "text": "Create a new audit record before interrupt() because duplicates are harmless"}
+      ],
+      "correctAnswer": ["A", "B", "C"],
+      "explanation": "Because the node re-runs on resume, non-idempotent writes before interrupt() such as creating records or appending to lists repeat on each resume.",
+      "tags": ["Interrupt", "Rules", "Idempotency"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/interrupts"
+    },
+    {
+      "id": "lg_w08_patterns_q101",
+      "topicId": "lg_w08_patterns",
+      "type": "CODE_COMPLETION",
+      "difficulty": "INTERMEDIATE",
+      "title": "Fill in the resume value that routes this run to the 'cancel' node.",
+      "codeSnippet": "def approval_node(state):\n    ok = interrupt({\"question\": \"Proceed?\"})\n    return Command(goto=\"proceed\" if ok else \"cancel\")\n\ngraph.invoke(Command(resume=______), config)",
+      "options": [
+        {"id": "A", "text": "\"cancel\""},
+        {"id": "B", "text": "False"},
+        {"id": "C", "text": "\"reject\""},
+        {"id": "D", "text": "\"no\""}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "The resume value becomes ok, and only a falsy value takes the cancel branch. Non-empty strings such as \"cancel\" are truthy and would route to proceed.",
+      "tags": ["Patterns", "Approve/Reject", "Command"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/interrupts"
+    },
+    {
+      "id": "lg_w08_patterns_q102",
+      "topicId": "lg_w08_patterns",
+      "type": "CODE_READING",
+      "difficulty": "BEGINNER",
+      "title": "After resuming with Command(resume='Improved draft'), what is state['generated_text']?",
+      "codeSnippet": "def review_node(state):\n    edited = interrupt({\n        \"instruction\": \"Review and edit this content\",\n        \"content\": state[\"generated_text\"],\n    })\n    return {\"generated_text\": edited}",
+      "options": [
+        {"id": "A", "text": "The original draft"},
+        {"id": "B", "text": "The payload dict with instruction and content"},
+        {"id": "C", "text": "None"},
+        {"id": "D", "text": "'Improved draft'"}
+      ],
+      "correctAnswer": ["D"],
+      "explanation": "The resume value becomes the return value of interrupt(), and the node writes it back to the state key.",
+      "tags": ["Patterns", "Review and Edit"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/interrupts"
+    },
+    {
+      "id": "lg_w08_patterns_q103",
+      "topicId": "lg_w08_patterns",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "What is the recommended way to re-prompt a human until the input is valid?",
+      "options": [
+        {"id": "A", "text": "Wrap interrupt() in a while True loop inside one node"},
+        {"id": "B", "text": "Catch ValueError around interrupt() and call it again"},
+        {"id": "C", "text": "Resume repeatedly with Command(update=...)"},
+        {"id": "D", "text": "Call interrupt() once per node invocation, store the error in state, and loop back with a conditional edge"}
+      ],
+      "correctAnswer": ["D"],
+      "explanation": "A loop with several interrupt() calls in one node replays every earlier iteration on each resume. A conditional edge re-invokes the node so each invocation has exactly one interrupt.",
+      "tags": ["Patterns", "Validation"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/interrupts"
+    },
+    {
+      "id": "lg_w08_patterns_q104",
+      "topicId": "lg_w08_patterns",
+      "type": "CODE_READING",
+      "difficulty": "ADVANCED",
+      "title": "This node is used with a conditional edge that calls route(). The human resumes with 'thirty'. What happens next?",
+      "codeSnippet": "def get_age_node(state):\n    q = state.get(\"pending_question\") or \"What is your age?\"\n    answer = interrupt(q)\n    if isinstance(answer, int) and answer > 0:\n        return {\"age\": answer, \"pending_question\": None}\n    return {\"pending_question\": f\"'{answer}' is not a valid age.\"}\n\ndef route(state):\n    return END if state.get(\"age\") is not None else \"collect_age\"",
+      "options": [
+        {"id": "A", "text": "The graph ends because the node returned normally"},
+        {"id": "B", "text": "The node raises a ValueError"},
+        {"id": "C", "text": "route() sends the run back to the node, which pauses again at interrupt() with the new question"},
+        {"id": "D", "text": "The node loops internally and asks again without pausing"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "An invalid answer stores a new pending_question, age stays None, so route() returns the node name and the next invocation pauses at its single interrupt() call.",
+      "tags": ["Patterns", "Validation", "Conditional Edges"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/interrupts"
+    },
+    {
+      "id": "lg_w08_patterns_q105",
+      "topicId": "lg_w08_patterns",
+      "type": "CODE_READING",
+      "difficulty": "INTERMEDIATE",
+      "title": "The model called the tool with subject 'Hi' and body 'Meeting at 3'. The reviewer resumes with {'action': 'approve', 'subject': 'Updated subject'}. What does the tool return?",
+      "codeSnippet": "@tool\ndef send_email(to: str, subject: str, body: str):\n    response = interrupt({\"action\": \"send_email\", \"to\": to})\n    if response.get(\"action\") == \"approve\":\n        s = response.get(\"subject\", subject)\n        b = response.get(\"body\", body)\n        return f\"Sent '{s}': {b}\"\n    return \"Email cancelled by user\"",
+      "options": [
+        {"id": "A", "text": "Email cancelled by user"},
+        {"id": "B", "text": "Sent 'Hi': Meeting at 3"},
+        {"id": "C", "text": "Sent 'Updated subject': Meeting at 3"},
+        {"id": "D", "text": "A KeyError because body is missing from the resume value"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "The resume dict overrides only the keys it contains. response.get('body', body) falls back to the original body, while the subject comes from the reviewer.",
+      "tags": ["Patterns", "Tool Approval"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/interrupts"
+    },
+    {
+      "id": "lg_w08_patterns_q106",
+      "topicId": "lg_w08_patterns",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "ADVANCED",
+      "title": "A node calls interrupt(payload, response_schema=Decision) with a Pydantic model Decision. What happens if the resume value does not match the schema?",
+      "options": [
+        {"id": "A", "text": "The invalid value is stored and passed to the node unchanged"},
+        {"id": "B", "text": "The thread is permanently failed and needs a new thread_id"},
+        {"id": "C", "text": "pydantic.ValidationError is raised, and you can retry with a corrected Command(resume=...) on the same thread"},
+        {"id": "D", "text": "The value is silently replaced with None"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "With a typed schema, resume values are validated using Pydantic rules, and invalid input raises ValidationError. Response schemas require langgraph>=1.2.12.",
+      "tags": ["Patterns", "Response Schema", "Validation"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/interrupts"
+    },
+    {
+      "id": "lg_w08_resume_q101",
+      "topicId": "lg_w08_resume",
+      "type": "DEBUGGING",
+      "difficulty": "INTERMEDIATE",
+      "title": "What is wrong with continuing a multi-turn conversation like this?",
+      "codeSnippet": "config = {\"configurable\": {\"thread_id\": \"chat-1\"}}\ngraph.invoke({\"messages\": [(\"user\", \"Hi\")]}, config)\ngraph.invoke(\n    Command(update={\"messages\": [(\"user\", \"Tell me more\")]}),\n    config,\n)",
+      "options": [
+        {"id": "A", "text": "A thread_id cannot be reused across two invoke() calls"},
+        {"id": "B", "text": "Only Command(resume=...) is meant as input to invoke(); pass a plain input dict instead of Command(update=...)"},
+        {"id": "C", "text": "Messages must be passed as strings instead of tuples"},
+        {"id": "D", "text": "Command can only be used with stream(), never with invoke()"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "The update, goto and graph parameters of Command are designed for returning from node functions. Only resume is intended as input to invoke(), stream() and stream_events().",
+      "tags": ["Resume", "Command", "Debugging"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/interrupts"
+    },
+    {
+      "id": "lg_w08_breakpoints_q101",
+      "topicId": "lg_w08_breakpoints",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "For human-in-the-loop workflows, what do the docs recommend instead of interrupt_before and interrupt_after?",
+      "options": [
+        {"id": "A", "text": "A second checkpointer"},
+        {"id": "B", "text": "The interrupt() function"},
+        {"id": "C", "text": "Only interrupt_after on every node"},
+        {"id": "D", "text": "A larger recursion limit"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "Static interrupts are meant for debugging as breakpoints and are not recommended for human-in-the-loop. The interrupt() function is the recommended tool.",
+      "tags": ["Breakpoints", "Static Interrupts"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/interrupts"
+    },
+    {
+      "id": "lg_w08_breakpoints_q102",
+      "topicId": "lg_w08_breakpoints",
+      "type": "CODE_COMPLETION",
+      "difficulty": "INTERMEDIATE",
+      "title": "Fill in the input that resumes a graph paused by a static breakpoint.",
+      "codeSnippet": "graph = builder.compile(\n    interrupt_before=[\"node_a\"],\n    checkpointer=checkpointer,\n)\nconfig = {\"configurable\": {\"thread_id\": \"some_thread\"}}\ngraph.invoke(inputs, config=config)\ngraph.invoke(______, config=config)",
+      "options": [
+        {"id": "A", "text": "Command(resume=True)"},
+        {"id": "B", "text": "{}"},
+        {"id": "C", "text": "None"},
+        {"id": "D", "text": "\"continue\""}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "A graph paused by a static breakpoint is resumed by passing None as the input, which runs until the next breakpoint. Command(resume=...) answers a dynamic interrupt().",
+      "tags": ["Breakpoints", "Static Interrupts"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/interrupts"
+    },
+    {
+      "id": "lg_w08_breakpoints_q103",
+      "topicId": "lg_w08_breakpoints",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "What distinguishes a dynamic interrupt() from a static breakpoint?",
+      "options": [
+        {"id": "A", "text": "It can be placed anywhere in your code and can be conditional on application logic"},
+        {"id": "B", "text": "It works without a checkpointer"},
+        {"id": "C", "text": "It only pauses before a node starts"},
+        {"id": "D", "text": "It is configured only in LangSmith Studio"}
+      ],
+      "correctAnswer": ["A"],
+      "explanation": "Static breakpoints pause before or after specific nodes. interrupt() is dynamic and also needs a checkpointer to save the paused state.",
+      "tags": ["Breakpoints", "Dynamic Interrupts"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/interrupts"
+    },
+    {
+      "id": "lg_w08_breakpoints_q104",
+      "topicId": "lg_w08_breakpoints",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "ADVANCED",
+      "title": "A completed thread contains interrupt() in node ask_human. You call graph.invoke(None, before_ask.config) using the checkpoint before ask_human. What happens?",
+      "options": [
+        {"id": "A", "text": "The earlier answer is reused automatically"},
+        {"id": "B", "text": "The call is a no-op"},
+        {"id": "C", "text": "It raises an error because the interrupt was already answered"},
+        {"id": "D", "text": "ask_human re-executes and pauses again, waiting for a new Command(resume=...)"}
+      ],
+      "correctAnswer": ["D"],
+      "explanation": "Time travel re-executes nodes after the checkpoint, and interrupts are always re-triggered. A new resume value is required.",
+      "tags": ["Time Travel", "Replay", "Interrupt"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/use-time-travel"
+    },
+    {
+      "id": "lg_w08_breakpoints_q105",
+      "topicId": "lg_w08_breakpoints",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "ADVANCED",
+      "title": "Which statements about time travel (replay and fork) are true?",
+      "options": [
+        {"id": "A", "text": "Replay re-executes nodes after the chosen checkpoint, including LLM calls and interrupts"},
+        {"id": "B", "text": "update_state on a prior checkpoint creates a new branch instead of rolling the thread back"},
+        {"id": "C", "text": "Replaying from the final checkpoint, which has no next nodes, is a no-op"},
+        {"id": "D", "text": "Nodes before the chosen checkpoint are executed again"}
+      ],
+      "correctAnswer": ["A", "B", "C"],
+      "explanation": "Results of nodes before the checkpoint are already saved and are not re-executed. Only later nodes run again, and they may return different results.",
+      "tags": ["Time Travel", "Replay", "Fork"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/use-time-travel"
+    },
+    {
+      "id": "lg_w08_breakpoints_q106",
+      "topicId": "lg_w08_breakpoints",
+      "type": "CODE_READING",
+      "difficulty": "ADVANCED",
+      "title": "A subgraph is invoked inside a parent node. When the run is resumed after the interrupt, which code runs again?",
+      "codeSnippet": "def node_in_parent_graph(state: State):\n    some_code()\n    result = subgraph.invoke(some_input)\n\ndef node_in_subgraph(state: State):\n    some_other_code()\n    name = interrupt(\"What's your name?\")",
+      "options": [
+        {"id": "A", "text": "Only the lines after interrupt()"},
+        {"id": "B", "text": "Only some_other_code()"},
+        {"id": "C", "text": "Both some_code() and some_other_code()"},
+        {"id": "D", "text": "Neither, because the subgraph state is cached"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "The parent resumes from the beginning of the node that invoked the subgraph, and the subgraph resumes from the beginning of the node that called interrupt().",
+      "tags": ["Subgraphs", "Interrupt", "Resume"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/interrupts"
+    },
+    {
+      "id": "lg_w08_interrupt_q101",
+      "topicId": "lg_w08_interrupt",
+      "type": "CODE_COMPLETION",
+      "difficulty": "INTERMEDIATE",
+      "title": "Two parallel nodes both called interrupt(). Fill in the attribute used to pair each answer with its interrupt.",
+      "codeSnippet": "result = graph.invoke({\"vals\": []}, config)\nresume_map = {\n    i.______: f\"answer for {i.value}\"\n    for i in result[\"__interrupt__\"]\n}\ngraph.invoke(Command(resume=resume_map), config)",
+      "options": [
+        {"id": "A", "text": "thread_id"},
+        {"id": "B", "text": "node"},
+        {"id": "C", "text": "index"},
+        {"id": "D", "text": "id"}
+      ],
+      "correctAnswer": ["D"],
+      "explanation": "When resuming several interrupts in one invocation, map each interrupt ID to its resume value so each response is paired with the correct interrupt.",
+      "tags": ["Interrupt", "Parallel", "Command"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/interrupts"
+    },
+    {
+      "id": "lg_w08_interrupt_q102",
+      "topicId": "lg_w08_interrupt",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "With the default graph.invoke() API, where does the interrupt payload appear in the result?",
+      "options": [
+        {"id": "A", "text": "Under result[\"__interrupt__\"]"},
+        {"id": "B", "text": "In result[\"messages\"][-1]"},
+        {"id": "C", "text": "In a file next to the checkpointer"},
+        {"id": "D", "text": "It is only printed to the console"}
+      ],
+      "correctAnswer": ["A"],
+      "explanation": "invoke() surfaces interrupts under __interrupt__ in the result. With event streaming they appear on stream.interrupts instead.",
+      "tags": ["Interrupt", "Invoke"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/interrupts"
+    },
+    {
+      "id": "lg_w08_interrupt_q103",
+      "topicId": "lg_w08_interrupt",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "When driving a graph with graph.stream_events(..., version=\"v3\"), how do you detect a pause and read its payload?",
+      "options": [
+        {"id": "A", "text": "stream.error is set and holds the payload"},
+        {"id": "B", "text": "The last item of stream.messages contains the payload"},
+        {"id": "C", "text": "stream.interrupted is True and the payloads are on stream.interrupts"},
+        {"id": "D", "text": "stream.output raises an exception with the payload"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "Event streaming exposes stream.interrupted and stream.interrupts. Resume by calling stream_events again with Command(resume=...) until interrupted is false.",
+      "tags": ["Interrupt", "Streaming"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/interrupts"
+    },
+    {
+      "id": "lg_w08_interrupt_q104",
+      "topicId": "lg_w08_interrupt",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "ADVANCED",
+      "title": "With graph.invoke(inputs, config=config, version=\"v2\"), which is the non-deprecated way to read pending interrupts?",
+      "options": [
+        {"id": "A", "text": "result.pending"},
+        {"id": "B", "text": "result[\"__interrupt__\"]"},
+        {"id": "C", "text": "result.interrupts"},
+        {"id": "D", "text": "graph.get_interrupts(config)"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "With v2, invoke() returns a GraphOutput with .value and .interrupts, where interrupts is an empty tuple if none occurred. Dict-style access such as result[\"__interrupt__\"] still works but is deprecated.",
+      "tags": ["Interrupt", "Streaming", "v2"],
+      "technology": "LangGraph",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langgraph/streaming"
+    },
+    {
+      "id": "lg_w08_hitl_middleware_q101",
+      "topicId": "lg_w08_hitl_middleware",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "Which decision types can a reviewer give for a tool call paused by HumanInTheLoopMiddleware?",
+      "options": [
+        {"id": "A", "text": "approve"},
+        {"id": "B", "text": "edit"},
+        {"id": "C", "text": "reject"},
+        {"id": "D", "text": "respond"},
+        {"id": "E", "text": "rewind"}
+      ],
+      "correctAnswer": ["A", "B", "C", "D"],
+      "explanation": "The middleware defines approve, edit, reject and respond. There is no rewind decision type.",
+      "tags": ["Middleware", "Decisions"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/human-in-the-loop"
+    },
+    {
+      "id": "lg_w08_hitl_middleware_q102",
+      "topicId": "lg_w08_hitl_middleware",
+      "type": "CODE_READING",
+      "difficulty": "BEGINNER",
+      "title": "Which statement about this interrupt_on policy is correct?",
+      "codeSnippet": "HumanInTheLoopMiddleware(\n    interrupt_on={\n        \"write_file\": True,\n        \"execute_sql\": {\"allowed_decisions\": [\"approve\", \"reject\"]},\n        \"read_data\": False,\n    },\n)",
+      "options": [
+        {"id": "A", "text": "read_data calls run without pausing for review"},
+        {"id": "B", "text": "A reviewer can edit the arguments of execute_sql calls"},
+        {"id": "C", "text": "write_file calls are blocked completely"},
+        {"id": "D", "text": "read_data calls always pause because False means the default config"}
+      ],
+      "correctAnswer": ["A"],
+      "explanation": "False auto-approves a tool, True uses the default config with all decisions, and allowed_decisions restricts a tool. execute_sql allows only approve and reject, so editing is not allowed.",
+      "tags": ["Middleware", "interrupt_on"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/human-in-the-loop"
+    },
+    {
+      "id": "lg_w08_hitl_middleware_q103",
+      "topicId": "lg_w08_hitl_middleware",
+      "type": "CODE_COMPLETION",
+      "difficulty": "INTERMEDIATE",
+      "title": "Fill in the key used to resume an agent paused in the default batched mode.",
+      "codeSnippet": "agent.invoke(\n    Command(resume={\"______\": [{\"type\": \"approve\"}]}),\n    config=config,\n    version=\"v2\",\n)",
+      "options": [
+        {"id": "A", "text": "approvals"},
+        {"id": "B", "text": "actions"},
+        {"id": "C", "text": "decisions"},
+        {"id": "D", "text": "responses"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "In batched mode the resume value is a dict with a decisions list, one decision per action under review, in the same order as the interrupt request.",
+      "tags": ["Middleware", "Resume", "Batched"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/human-in-the-loop"
+    },
+    {
+      "id": "lg_w08_hitl_middleware_q104",
+      "topicId": "lg_w08_hitl_middleware",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "A reviewer wants to deny a side-effecting tool call. Which decision should be used?",
+      "options": [
+        {"id": "A", "text": "respond, because it skips execution"},
+        {"id": "B", "text": "reject, because respond returns its message as a successful tool result"},
+        {"id": "C", "text": "edit with empty arguments"},
+        {"id": "D", "text": "approve and rely on the tool to refuse"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "reject skips the call and returns feedback to the agent. respond is for ask-user style tools, and its message is treated as a successful ToolMessage.",
+      "tags": ["Middleware", "Decisions"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/human-in-the-loop"
+    },
+    {
+      "id": "lg_w08_hitl_middleware_q105",
+      "topicId": "lg_w08_hitl_middleware",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "ADVANCED",
+      "title": "A tool uses a `when` predicate in interrupt_on. On resume the predicate returns False for the same call. What happens?",
+      "options": [
+        {"id": "A", "text": "The call pauses again for a new decision"},
+        {"id": "B", "text": "The tool runs and the reviewer's answer is ignored, even a reject"},
+        {"id": "C", "text": "The reviewer's reject is still applied"},
+        {"id": "D", "text": "The agent is deleted from the checkpointer"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "The predicate runs again when the agent resumes, so it must return the same result for the same call. If it flips to False, the tool executes without applying the decision.",
+      "tags": ["Middleware", "Conditional Interrupts"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/human-in-the-loop"
+    }
+  ]
+}

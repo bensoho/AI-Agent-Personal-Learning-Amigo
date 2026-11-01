@@ -1,0 +1,674 @@
+{
+  "schemaVersion": 1,
+  "week": 3,
+  "module": "LangChain",
+  "topics": [
+    {
+      "id": "lc_w03_tool_runtime",
+      "name": "ToolRuntime and Tool Return Values",
+      "description": "Accessing state, context and store from tools, and returning Command or direct results.",
+      "notes": [
+        "## ToolRuntime",
+        "- 在工具签名中加入 `runtime: ToolRuntime`，ToolNode 会在调用时自动注入；该参数不会出现在发给模型的 schema 中。",
+        "- `runtime.state`：短期记忆（messages 与自定义字段）。",
+        "- `runtime.context`：调用时传入的不可变配置（如 user_id）。",
+        "- `runtime.store`：跨会话的长期记忆。",
+        "- `runtime.stream_writer`：在工具执行中推送实时进度。",
+        "- `runtime.tool_call_id`：当前工具调用的唯一 ID。",
+        "- `config` 与 `runtime` 是保留参数名，不能用作自己的工具参数。",
+        "## 工具返回值",
+        "- 返回 str：转成 ToolMessage，模型据此继续。",
+        "- 返回 dict 等对象：序列化后作为工具输出，不会直接更新 state。",
+        "- 返回 Command：通过 update 修改 state。",
+        "```python",
+        "@tool",
+        "def set_language(language: str, runtime: ToolRuntime) -> Command:",
+        "    \"\"\"Set the preferred response language.\"\"\"",
+        "    msg = ToolMessage(content=f\"Language set to {language}.\", tool_call_id=runtime.tool_call_id)",
+        "    return Command(update={\"preferred_language\": language, \"messages\": [msg]})",
+        "```",
+        "- Command 作用于当前图时，update 必须包含 tool_call_id 匹配的 ToolMessage，否则 ToolNode 抛出 ValueError。",
+        "- 模型可并行调用多个工具，被并发更新的 state 字段应定义 reducer。",
+        "- `@tool(return_direct=True)` 跳过再次调用模型；仅当同一步所有工具都是 return_direct 时才结束循环。",
+        "- 工具名建议用 snake_case；`@tool(\"web_search\")` 可自定义名称。"
+      ]
+    },
+    {
+      "id": "lc_w03_create_agent",
+      "name": "create_agent Configuration",
+      "description": "Model, tools, system prompt, response format, state schema and dynamic configuration.",
+      "notes": [
+        "## create_agent",
+        "- Agent = 模型 + harness：模型在循环中调用工具，直到任务完成。",
+        "- `model` 可以是 \"provider:model\" 字符串，也可以是已初始化的模型实例。",
+        "- `tools` 接受 Python 可调用对象、LangChain tool 或 tool dict。",
+        "- `system_prompt` 接受字符串或 SystemMessage。",
+        "```python",
+        "agent = create_agent(",
+        "    model=\"openai:gpt-5.5\",",
+        "    tools=[search],",
+        "    system_prompt=\"You are a helpful assistant.\",",
+        "    response_format=Answer,",
+        "    state_schema=MyState,",
+        "    checkpointer=InMemorySaver(),",
+        ")",
+        "```",
+        "- `response_format`：返回经过校验的结构化结果，读取 `result[\"structured_response\"]`。",
+        "- `state_schema`：继承 AgentState 添加自定义字段。",
+        "- `context_schema`：调用时用 `context=` 传入，工具与中间件通过 `runtime.context` 读取。",
+        "- `checkpointer` + `thread_id`：持久化对话；thread_id 管会话，context 管单次运行数据。",
+        "- `name`：给 agent 命名，作为多 agent 系统的子图时有用。",
+        "## 动态配置",
+        "- 用 middleware 的 @wrap_model_call 在运行时替换 model、tools 或 system_message。",
+        "- `request.system_message` 始终是 SystemMessage，即使 system_prompt 是字符串。",
+        "- 已调用 bind_tools 的模型不支持与 structured output 一起使用。"
+      ]
+    },
+    {
+      "id": "lc_w03_agent_middleware",
+      "name": "Agent Middleware",
+      "description": "Node-style and wrap-style hooks, execution order, jumps and built-in middleware.",
+      "notes": [
+        "## Middleware 钩子",
+        "- Node-style：before_agent、before_model、after_model、after_agent，在特定节点运行，返回 dict 合并进 state。",
+        "- Wrap-style：wrap_model_call、wrap_tool_call，包裹每次调用，由你决定 handler 调用 0 次、1 次或多次（短路/正常/重试）。",
+        "- before_agent/after_agent 每次 invoke 只运行一次；before_model/after_model 每次模型调用都运行。",
+        "```python",
+        "@before_model(can_jump_to=[\"end\"])",
+        "def check_limit(state: AgentState, runtime: Runtime):",
+        "    if len(state[\"messages\"]) >= 50:",
+        "        return {\"messages\": [AIMessage(\"Limit reached.\")], \"jump_to\": \"end\"}",
+        "    return None",
+        "```",
+        "- jump_to 可选 'end'、'tools'、'model'，需要用 can_jump_to 声明。",
+        "## 执行顺序",
+        "- before_* 从前到后；after_* 从后到前；wrap_* 层层嵌套（第一个 middleware 在最外层）。",
+        "## 内置 middleware",
+        "- SummarizationMiddleware：trigger（tokens/messages/fraction，列表为 OR，字典为 AND）与 keep。",
+        "- HumanInTheLoopMiddleware：对工具调用做 approve/edit/reject，必须配置 checkpointer。",
+        "- ModelCallLimitMiddleware：thread_limit、run_limit、exit_behavior（end 或 error）。",
+        "- ToolCallLimitMiddleware：可按 tool_name 限制；默认 exit_behavior 为 continue。",
+        "- ToolRetryMiddleware / ModelRetryMiddleware：指数退避重试。",
+        "- 运行时注册的工具需要同时用 wrap_model_call 添加、wrap_tool_call 执行。"
+      ]
+    },
+    {
+      "id": "lc_w03_streaming_memory",
+      "name": "Agent Streaming and Short-term Memory",
+      "description": "Stream modes, checkpointer-based memory, trimming history and parallel tool calls.",
+      "notes": [
+        "## Streaming",
+        "- `stream_mode=\"updates\"`：每个 agent 步骤后推送 state 更新（model 节点 → tools 节点 → model 节点）。",
+        "- `stream_mode=\"messages\"`：推送 (token, metadata) 二元组，即 LLM token。",
+        "- `stream_mode=\"custom\"`：推送工具里通过 stream writer 发出的自定义数据。",
+        "- 可传列表同时使用多种模式，例如 `[\"updates\", \"custom\"]`。",
+        "```python",
+        "for chunk in agent.stream(",
+        "    {\"messages\": [{\"role\": \"user\", \"content\": \"What is the weather in SF?\"}]},",
+        "    stream_mode=[\"updates\", \"custom\"],",
+        "    version=\"v2\",",
+        "):",
+        "    print(chunk[\"type\"], chunk[\"data\"])",
+        "```",
+        "- 工具内的 get_stream_writer() 只能在 LangGraph 执行上下文中调用。",
+        "## 短期记忆",
+        "- 短期记忆是线程级的对话历史，属于 agent state；创建 agent 时传入 checkpointer，调用时传同一个 thread_id。",
+        "- 生产环境使用数据库支持的 checkpointer（如 PostgresSaver）。",
+        "- 历史过长时的常见做法：Trim（@before_model）、Delete（RemoveMessage）、Summarize（SummarizationMiddleware）。",
+        "- RemoveMessage 依赖带 add_messages reducer 的 state key，默认 AgentState 已提供。",
+        "- 删除后历史必须合法：带 tool_calls 的 assistant 消息之后要有对应的 tool 结果消息。",
+        "## 并行工具调用",
+        "- 模型可在一次响应中返回多个 tool_calls，每个调用都要有对应的 ToolMessage。",
+        "- OpenAI、Anthropic 等可用 `bind_tools(..., parallel_tool_calls=False)` 关闭。"
+      ]
+    }
+  ],
+  "questions": [
+    {
+      "id": "lc_w03_tool_runtime_q101",
+      "topicId": "lc_w03_tool_runtime",
+      "type": "CODE_READING",
+      "difficulty": "BEGINNER",
+      "title": "What does this code print?",
+      "codeSnippet": "@tool(\"web_search\")\ndef search(query: str) -> str:\n    \"\"\"Search the web for information.\"\"\"\n    return f\"Results for: {query}\"\n\nprint(search.name)",
+      "options": [
+        {"id": "A", "text": "search"},
+        {"id": "B", "text": "web_search"},
+        {"id": "C", "text": "Search the web for information."},
+        {"id": "D", "text": "search_tool"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "The tool name normally comes from the function name, but passing a string to @tool overrides it. The docstring is the description, not the name.",
+      "tags": ["Tools", "@tool"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/tools"
+    },
+    {
+      "id": "lc_w03_tool_runtime_q102",
+      "topicId": "lc_w03_tool_runtime",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "What role do the type hints of a @tool function play?",
+      "options": [
+        {"id": "A", "text": "They are only used by static type checkers"},
+        {"id": "B", "text": "They select which model provider is called"},
+        {"id": "C", "text": "They define the tool's input schema"},
+        {"id": "D", "text": "They decide whether the tool uses return_direct"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "The docs state that type hints are required because they define the tool's input schema. They are not just documentation for type checkers.",
+      "tags": ["Tools", "Schema"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/tools"
+    },
+    {
+      "id": "lc_w03_tool_runtime_q103",
+      "topicId": "lc_w03_tool_runtime",
+      "type": "CODE_READING",
+      "difficulty": "INTERMEDIATE",
+      "title": "Which arguments does the model see in this tool's schema?",
+      "codeSnippet": "@tool\ndef get_user_preference(pref_name: str, runtime: ToolRuntime) -> str:\n    \"\"\"Get a user preference value.\"\"\"\n    prefs = runtime.state.get(\"user_preferences\", {})\n    return prefs.get(pref_name, \"Not set\")",
+      "options": [
+        {"id": "A", "text": "Both pref_name and runtime"},
+        {"id": "B", "text": "Only pref_name"},
+        {"id": "C", "text": "Only runtime"},
+        {"id": "D", "text": "None; the model sees only the docstring"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "The runtime parameter is injected by ToolNode and hidden from the model, so only pref_name appears in the schema.",
+      "tags": ["ToolRuntime", "Tools"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/tools"
+    },
+    {
+      "id": "lc_w03_tool_runtime_q104",
+      "topicId": "lc_w03_tool_runtime",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "Which of these can a tool read through its ToolRuntime parameter?",
+      "options": [
+        {"id": "A", "text": "State (runtime.state), the short-term memory of the conversation"},
+        {"id": "B", "text": "Context (runtime.context), the immutable per-invocation configuration"},
+        {"id": "C", "text": "The raw HTTP request headers sent to the model provider"},
+        {"id": "D", "text": "Store (runtime.store), the long-term memory"}
+      ],
+      "correctAnswer": ["A", "B", "D"],
+      "explanation": "ToolRuntime exposes state, context, store, stream writer, execution info, config and the tool call ID. Provider HTTP headers are not part of it.",
+      "tags": ["ToolRuntime", "Context"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/tools"
+    },
+    {
+      "id": "lc_w03_tool_runtime_q105",
+      "topicId": "lc_w03_tool_runtime",
+      "type": "DEBUGGING",
+      "difficulty": "INTERMEDIATE",
+      "title": "This tool makes the agent fail with an error when it runs. Why?",
+      "codeSnippet": "class CustomState(AgentState):\n    user_name: str\n\n@tool\ndef set_user_name(new_name: str, runtime: ToolRuntime) -> Command:\n    \"\"\"Set the user's name in the conversation state.\"\"\"\n    return Command(update={\"user_name\": new_name})",
+      "options": [
+        {"id": "A", "text": "A Command cannot update custom state fields"},
+        {"id": "B", "text": "The runtime parameter must be renamed to config"},
+        {"id": "C", "text": "The update has no ToolMessage matching the tool call, so ToolNode raises a ValueError"},
+        {"id": "D", "text": "Tools are not allowed to return anything except str"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "When a Command targets the current graph, its update must include a ToolMessage with tool_call_id=runtime.tool_call_id. Commands can update custom state fields, and config is a reserved name.",
+      "tags": ["Command", "ToolMessage", "Debugging"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/tools"
+    },
+    {
+      "id": "lc_w03_tool_runtime_q106",
+      "topicId": "lc_w03_tool_runtime",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "ADVANCED",
+      "title": "In one step the model calls a tool with return_direct=True and another tool without it. What does the agent do?",
+      "options": [
+        {"id": "A", "text": "It exits immediately and returns only the return_direct tool's output"},
+        {"id": "B", "text": "It discards the tool without return_direct"},
+        {"id": "C", "text": "It raises a ValueError because the modes are mixed"},
+        {"id": "D", "text": "It routes back to the model with every ToolMessage from that batch"}
+      ],
+      "correctAnswer": ["D"],
+      "explanation": "return_direct only ends the loop when every tool call in the step has return_direct=True. With mixed calls, all tools run and the model sees all results.",
+      "tags": ["return_direct", "Parallel Tool Calls"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/tools"
+    },
+    {
+      "id": "lc_w03_tool_runtime_q107",
+      "topicId": "lc_w03_tool_runtime",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "ADVANCED",
+      "title": "Which parameter names are reserved and cannot be used as your own tool arguments?",
+      "options": [
+        {"id": "A", "text": "config"},
+        {"id": "B", "text": "query"},
+        {"id": "C", "text": "runtime"},
+        {"id": "D", "text": "user_id"}
+      ],
+      "correctAnswer": ["A", "C"],
+      "explanation": "config is reserved for passing RunnableConfig internally and runtime for the ToolRuntime parameter. Using them as ordinary arguments causes runtime errors.",
+      "tags": ["ToolRuntime", "Tools"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/tools"
+    },
+    {
+      "id": "lc_w03_create_agent_q101",
+      "topicId": "lc_w03_create_agent",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "How do you give a create_agent agent its system prompt?",
+      "options": [
+        {"id": "A", "text": "Pass system_prompt, which accepts a string or a SystemMessage"},
+        {"id": "B", "text": "Pass prompt, which accepts only a string"},
+        {"id": "C", "text": "Pass instructions as a list of dicts"},
+        {"id": "D", "text": "Pass system_prompt, which accepts only a SystemMessage"}
+      ],
+      "correctAnswer": ["A"],
+      "explanation": "The system_prompt parameter accepts a string or a SystemMessage. Dynamic prompts at runtime are done with middleware.",
+      "tags": ["create_agent", "System Prompt"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/agents"
+    },
+    {
+      "id": "lc_w03_create_agent_q102",
+      "topicId": "lc_w03_create_agent",
+      "type": "CODE_COMPLETION",
+      "difficulty": "BEGINNER",
+      "title": "Fill in the key that holds the validated Answer object.",
+      "codeSnippet": "class Answer(BaseModel):\n    summary: str\n    confidence: float\n\nagent = create_agent(model=\"openai:gpt-5.5\", tools=tools, response_format=Answer)\nresult = agent.invoke({\"messages\": [{\"role\": \"user\", \"content\": \"Summarize AI trends\"}]})\nprint(result[\"______\"])",
+      "options": [
+        {"id": "A", "text": "parsed"},
+        {"id": "B", "text": "output"},
+        {"id": "C", "text": "structured_response"},
+        {"id": "D", "text": "answer"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "With response_format set, the agent result stores the validated schema object under structured_response. The messages list still holds the conversation.",
+      "tags": ["Structured Output", "response_format"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/agents"
+    },
+    {
+      "id": "lc_w03_create_agent_q103",
+      "topicId": "lc_w03_create_agent",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "Which statements about AgentState are correct?",
+      "options": [
+        {"id": "A", "text": "It holds the conversation history in a messages field by default"},
+        {"id": "B", "text": "Custom fields are added by subclassing it and passing the subclass as state_schema"},
+        {"id": "C", "text": "Custom fields must be declared in context_schema instead"},
+        {"id": "D", "text": "Node-style middleware hooks such as before_model receive it as their state argument"}
+      ],
+      "correctAnswer": ["A", "B", "D"],
+      "explanation": "AgentState carries messages and is extended through state_schema. context_schema describes immutable per-run context, not mutable state fields.",
+      "tags": ["AgentState", "state_schema"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/agents"
+    },
+    {
+      "id": "lc_w03_create_agent_q104",
+      "topicId": "lc_w03_create_agent",
+      "type": "DEBUGGING",
+      "difficulty": "ADVANCED",
+      "title": "Dynamic model selection combined with structured output is not working. What does the docs warning point to?",
+      "codeSnippet": "advanced = ChatOpenAI(model=\"gpt-5.5\").bind_tools([search])\n\n@wrap_model_call\ndef pick_model(request, handler):\n    return handler(request.override(model=advanced))\n\nagent = create_agent(\n    model=basic, tools=[search], response_format=Answer,\n    middleware=[pick_model],\n)",
+      "options": [
+        {"id": "A", "text": "wrap_model_call cannot override the model"},
+        {"id": "B", "text": "The overriding model is pre-bound with bind_tools, which is not supported together with structured output"},
+        {"id": "C", "text": "response_format cannot be combined with tools"},
+        {"id": "D", "text": "request.override only accepts model name strings"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "The docs warn that pre-bound models are not supported with structured output, so pass unbound models in the middleware. wrap_model_call can override model.",
+      "tags": ["Dynamic Model", "Structured Output", "Debugging"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/models"
+    },
+    {
+      "id": "lc_w03_create_agent_q105",
+      "topicId": "lc_w03_create_agent",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "ADVANCED",
+      "title": "An agent is created with system_prompt=\"Be concise.\". Inside a wrap_model_call hook, what is request.system_message?",
+      "options": [
+        {"id": "A", "text": "The plain string \"Be concise.\""},
+        {"id": "B", "text": "None, unless a SystemMessage was passed to create_agent"},
+        {"id": "C", "text": "A SystemMessage object, even though a string was passed"},
+        {"id": "D", "text": "A list of dicts with role and content"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "ModelRequest.system_message is always a SystemMessage, so use its content_blocks to append content. It is never the raw string.",
+      "tags": ["Middleware", "System Prompt"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/middleware/custom"
+    },
+    {
+      "id": "lc_w03_agent_middleware_q101",
+      "topicId": "lc_w03_agent_middleware",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "Which middleware hook runs around each individual tool call?",
+      "options": [
+        {"id": "A", "text": "before_model"},
+        {"id": "B", "text": "after_agent"},
+        {"id": "C", "text": "wrap_model_call"},
+        {"id": "D", "text": "wrap_tool_call"}
+      ],
+      "correctAnswer": ["D"],
+      "explanation": "wrap_tool_call wraps each tool call, letting you retry, short-circuit or transform it. wrap_model_call wraps model calls instead.",
+      "tags": ["Middleware", "Hooks"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/middleware/custom"
+    },
+    {
+      "id": "lc_w03_agent_middleware_q102",
+      "topicId": "lc_w03_agent_middleware",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "Which hook runs only once per invocation, before the agent loop starts?",
+      "options": [
+        {"id": "A", "text": "before_model"},
+        {"id": "B", "text": "before_agent"},
+        {"id": "C", "text": "after_model"},
+        {"id": "D", "text": "wrap_model_call"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "before_agent runs once before the agent starts. before_model runs before every model call inside the loop.",
+      "tags": ["Middleware", "Hooks"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/middleware/custom"
+    },
+    {
+      "id": "lc_w03_agent_middleware_q103",
+      "topicId": "lc_w03_agent_middleware",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "With middleware=[m1, m2, m3], in what order do the after_model hooks run?",
+      "options": [
+        {"id": "A", "text": "m1, m2, m3"},
+        {"id": "B", "text": "Only m3's hook runs"},
+        {"id": "C", "text": "m3, m2, m1"},
+        {"id": "D", "text": "All three run in parallel"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "before_* hooks run first to last, while after_* hooks run in reverse, last to first. wrap_* hooks nest with the first middleware outermost.",
+      "tags": ["Middleware", "Execution Order"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/middleware/custom"
+    },
+    {
+      "id": "lc_w03_agent_middleware_q104",
+      "topicId": "lc_w03_agent_middleware",
+      "type": "CODE_READING",
+      "difficulty": "INTERMEDIATE",
+      "title": "What happens if every model call made by this middleware fails?",
+      "codeSnippet": "@wrap_model_call\ndef retry_model(request, handler):\n    for attempt in range(3):\n        try:\n            return handler(request)\n        except Exception as e:\n            if attempt == 2:\n                raise\n            print(f\"Retry {attempt + 1}/3 after error: {e}\")",
+      "options": [
+        {"id": "A", "text": "handler is called once and the exception is swallowed"},
+        {"id": "B", "text": "handler is retried forever until it succeeds"},
+        {"id": "C", "text": "handler is called up to 3 times, then the last exception is re-raised"},
+        {"id": "D", "text": "An empty ModelResponse is returned after 3 failures"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "A wrap-style hook controls how often handler runs. Here it runs up to three times and re-raises on the final attempt instead of hiding the error.",
+      "tags": ["wrap_model_call", "Retry"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/middleware/custom"
+    },
+    {
+      "id": "lc_w03_agent_middleware_q105",
+      "topicId": "lc_w03_agent_middleware",
+      "type": "CODE_COMPLETION",
+      "difficulty": "INTERMEDIATE",
+      "title": "Fill in the jump target that stops the agent early.",
+      "codeSnippet": "@before_model(can_jump_to=[\"end\"])\ndef check_message_limit(state: AgentState, runtime: Runtime):\n    if len(state[\"messages\"]) >= 50:\n        return {\n            \"messages\": [AIMessage(\"Conversation limit reached.\")],\n            \"jump_to\": \"______\",\n        }\n    return None",
+      "options": [
+        {"id": "A", "text": "stop"},
+        {"id": "B", "text": "exit"},
+        {"id": "C", "text": "return"},
+        {"id": "D", "text": "end"}
+      ],
+      "correctAnswer": ["D"],
+      "explanation": "The valid jump targets are 'end', 'tools' and 'model'. The target must also be declared in can_jump_to.",
+      "tags": ["Middleware", "jump_to"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/middleware/custom"
+    },
+    {
+      "id": "lc_w03_agent_middleware_q106",
+      "topicId": "lc_w03_agent_middleware",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "Which are valid jump_to targets in agent middleware?",
+      "options": [
+        {"id": "A", "text": "'end'"},
+        {"id": "B", "text": "'agent'"},
+        {"id": "C", "text": "'tools'"},
+        {"id": "D", "text": "'retry'"},
+        {"id": "E", "text": "'model'"}
+      ],
+      "correctAnswer": ["A", "C", "E"],
+      "explanation": "The documented targets are 'end' (end of execution or first after_agent hook), 'tools' (the tools node) and 'model' (the model node or first before_model hook).",
+      "tags": ["Middleware", "jump_to"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/middleware/custom"
+    },
+    {
+      "id": "lc_w03_agent_middleware_q107",
+      "topicId": "lc_w03_agent_middleware",
+      "type": "CODE_READING",
+      "difficulty": "INTERMEDIATE",
+      "title": "When does this SummarizationMiddleware summarize older messages?",
+      "codeSnippet": "SummarizationMiddleware(\n    model=\"gpt-5.4-mini\",\n    trigger=[(\"tokens\", 3000), (\"messages\", 6)],\n    keep=(\"messages\", 20),\n)",
+      "options": [
+        {"id": "A", "text": "Only when both thresholds are met"},
+        {"id": "B", "text": "Only when the token count reaches 3000"},
+        {"id": "C", "text": "When either the token count reaches 3000 or the message count reaches 6"},
+        {"id": "D", "text": "Never, because no fraction threshold is given"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "A list of trigger conditions uses OR logic. A single dict with several thresholds, such as {\"tokens\": 4000, \"messages\": 10}, would require all of them.",
+      "tags": ["SummarizationMiddleware", "Built-in Middleware"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/middleware/built-in"
+    },
+    {
+      "id": "lc_w03_agent_middleware_q108",
+      "topicId": "lc_w03_agent_middleware",
+      "type": "CODE_READING",
+      "difficulty": "ADVANCED",
+      "title": "Assume on_error returns a string for ValueError. If search_tool keeps raising ValueError, what happens?",
+      "codeSnippet": "agent = create_agent(\n    model=\"gpt-5.5\",\n    tools=[search_tool, database_tool],\n    middleware=[\n        ToolErrorMiddleware(on_error=on_error, tools=[\"search_tool\"]),\n        ToolRetryMiddleware(max_retries=3, on_failure=\"error\"),\n    ],\n)",
+      "options": [
+        {"id": "A", "text": "The first ValueError becomes an error ToolMessage and no retries happen"},
+        {"id": "B", "text": "The exception propagates and halts the run immediately"},
+        {"id": "C", "text": "ToolRetryMiddleware returns a ToolMessage because on_failure=\"error\" means return a message"},
+        {"id": "D", "text": "The retry middleware retries up to 3 times, then re-raises; ToolErrorMiddleware turns it into an error ToolMessage the model can see"}
+      ],
+      "correctAnswer": ["D"],
+      "explanation": "Retry is placed inner (later in the list) with on_failure=\"error\" so that, once retries are exhausted, the exception reaches ToolErrorMiddleware. That outer middleware converts it into a ToolMessage with error status.",
+      "tags": ["ToolErrorMiddleware", "ToolRetryMiddleware", "Error Handling"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/middleware/built-in"
+    },
+    {
+      "id": "lc_w03_agent_middleware_q109",
+      "topicId": "lc_w03_agent_middleware",
+      "type": "DEBUGGING",
+      "difficulty": "ADVANCED",
+      "title": "The model requests calculate_tip, which is added at runtime, but the agent cannot execute it. What is missing?",
+      "codeSnippet": "class DynamicToolMiddleware(AgentMiddleware):\n    def wrap_model_call(self, request, handler):\n        updated = request.override(tools=[*request.tools, calculate_tip])\n        return handler(updated)\n\nagent = create_agent(\n    model=\"gpt-5.5\",\n    tools=[get_weather],\n    middleware=[DynamicToolMiddleware()],\n)",
+      "options": [
+        {"id": "A", "text": "A wrap_tool_call hook that handles execution of the dynamically added tool"},
+        {"id": "B", "text": "calculate_tip must be passed through context_schema"},
+        {"id": "C", "text": "wrap_model_call cannot add tools to a request"},
+        {"id": "D", "text": "The middleware must subclass ToolNode"}
+      ],
+      "correctAnswer": ["A"],
+      "explanation": "Runtime-registered tools need two hooks: wrap_model_call to expose the tool to the model and wrap_tool_call so the agent knows how to run a tool that was not in the original tool list.",
+      "tags": ["Dynamic Tools", "wrap_tool_call", "Debugging"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/tools"
+    },
+    {
+      "id": "lc_w03_streaming_memory_q101",
+      "topicId": "lc_w03_streaming_memory",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "Which stream_mode streams LLM tokens with metadata as they are generated?",
+      "options": [
+        {"id": "A", "text": "updates"},
+        {"id": "B", "text": "tokens"},
+        {"id": "C", "text": "custom"},
+        {"id": "D", "text": "messages"}
+      ],
+      "correctAnswer": ["D"],
+      "explanation": "messages streams (token, metadata) tuples from nodes where an LLM is invoked. updates streams state changes after each step, and custom streams data from the stream writer.",
+      "tags": ["Streaming", "stream_mode"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/streaming"
+    },
+    {
+      "id": "lc_w03_streaming_memory_q102",
+      "topicId": "lc_w03_streaming_memory",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "What must you pass to create_agent so repeated invocations with the same thread_id remember earlier messages?",
+      "options": [
+        {"id": "A", "text": "A checkpointer such as InMemorySaver"},
+        {"id": "B", "text": "A state_schema"},
+        {"id": "C", "text": "A context_schema"},
+        {"id": "D", "text": "A name"}
+      ],
+      "correctAnswer": ["A"],
+      "explanation": "Short-term memory is thread-level persistence, which requires a checkpointer. thread_id alone does nothing without one.",
+      "tags": ["Short-term Memory", "Checkpointer"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/short-term-memory"
+    },
+    {
+      "id": "lc_w03_streaming_memory_q103",
+      "topicId": "lc_w03_streaming_memory",
+      "type": "MULTIPLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "Which are common patterns for keeping a long conversation within the context window?",
+      "options": [
+        {"id": "A", "text": "Trim messages before the model call"},
+        {"id": "B", "text": "Raise the model temperature"},
+        {"id": "C", "text": "Delete messages from state with RemoveMessage"},
+        {"id": "D", "text": "Summarize earlier messages and replace them with a summary"},
+        {"id": "E", "text": "Remove the checkpointer so history is not stored"}
+      ],
+      "correctAnswer": ["A", "C", "D"],
+      "explanation": "The short-term memory guide lists trimming, deleting and summarizing messages, plus custom strategies. Temperature does not affect context size, and removing the checkpointer drops memory entirely.",
+      "tags": ["Short-term Memory", "Context Window"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/short-term-memory"
+    },
+    {
+      "id": "lc_w03_streaming_memory_q104",
+      "topicId": "lc_w03_streaming_memory",
+      "type": "CODE_READING",
+      "difficulty": "INTERMEDIATE",
+      "title": "What does this hook do when the history has more than 3 messages?",
+      "codeSnippet": "@before_model\ndef trim_messages(state: AgentState, runtime: Runtime):\n    messages = state[\"messages\"]\n    if len(messages) <= 3:\n        return None\n    first_msg = messages[0]\n    recent = messages[-3:] if len(messages) % 2 == 0 else messages[-4:]\n    return {\"messages\": [RemoveMessage(id=REMOVE_ALL_MESSAGES), first_msg, *recent]}",
+      "options": [
+        {"id": "A", "text": "Appends a model-written summary to the history"},
+        {"id": "B", "text": "Deletes only the first message"},
+        {"id": "C", "text": "Replaces the whole history with the first message plus the most recent few before the model call"},
+        {"id": "D", "text": "Leaves the state unchanged because it returns a dict"}
+      ],
+      "correctAnswer": ["C"],
+      "explanation": "RemoveMessage(id=REMOVE_ALL_MESSAGES) clears the history, and the following messages become the new history. before_model runs before each model call.",
+      "tags": ["Trim Messages", "before_model", "RemoveMessage"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/short-term-memory"
+    },
+    {
+      "id": "lc_w03_streaming_memory_q105",
+      "topicId": "lc_w03_streaming_memory",
+      "type": "CODE_COMPLETION",
+      "difficulty": "INTERMEDIATE",
+      "title": "Fill in the argument that disables parallel tool calls on providers that support it.",
+      "codeSnippet": "model_with_tools = model.bind_tools([get_weather], ______=False)\nresponse = model_with_tools.invoke(\"What's the weather in Boston and Tokyo?\")",
+      "options": [
+        {"id": "A", "text": "parallel_tool_calls"},
+        {"id": "B", "text": "tool_choice"},
+        {"id": "C", "text": "max_tool_calls"},
+        {"id": "D", "text": "parallel"}
+      ],
+      "correctAnswer": ["A"],
+      "explanation": "Most tool-calling models enable parallel calls by default, and providers such as OpenAI and Anthropic accept parallel_tool_calls=False to turn it off. tool_choice only forces which tool is used.",
+      "tags": ["Parallel Tool Calls", "bind_tools"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/models"
+    },
+    {
+      "id": "lc_w03_streaming_memory_q106",
+      "topicId": "lc_w03_streaming_memory",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "ADVANCED",
+      "title": "When deleting messages from agent state with RemoveMessage, what must you make sure of?",
+      "options": [
+        {"id": "A", "text": "Only the most recent message may be deleted"},
+        {"id": "B", "text": "The resulting history stays valid for the provider, for example assistant messages with tool calls are still followed by their tool results"},
+        {"id": "C", "text": "You must define a custom reducer for messages first"},
+        {"id": "D", "text": "The checkpointer must be disabled"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "Providers often require a tool-calling assistant message to be followed by matching tool messages, and some expect history to start with a user message. The default AgentState already has the needed add_messages reducer.",
+      "tags": ["Delete Messages", "RemoveMessage"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/short-term-memory"
+    },
+    {
+      "id": "lc_w03_streaming_memory_q107",
+      "topicId": "lc_w03_streaming_memory",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "ADVANCED",
+      "title": "A tool calls get_stream_writer() to emit progress updates. What limitation does this introduce?",
+      "options": [
+        {"id": "A", "text": "The tool can only emit updates when stream_mode is \"values\""},
+        {"id": "B", "text": "The tool must be declared async"},
+        {"id": "C", "text": "The updates appear only in the final message"},
+        {"id": "D", "text": "The tool cannot be invoked outside a LangGraph execution context"}
+      ],
+      "correctAnswer": ["D"],
+      "explanation": "The docs note that using get_stream_writer inside a tool means you cannot call that tool outside a LangGraph execution context. The emitted data is read with stream_mode=\"custom\".",
+      "tags": ["Streaming", "Stream Writer"],
+      "technology": "LangChain",
+      "apiVersion": "v1",
+      "sourceUrl": "https://docs.langchain.com/oss/python/langchain/streaming"
+    }
+  ]
+}

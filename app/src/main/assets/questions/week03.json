@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "week": 3,
+  "module": "LangChain",
+  "topics": [
+    {"id": "lc_w03_tools", "name": "Tools", "description": "Defining functions the model can request.", "notes": [
+      "## Tool",
+      "- Tool 是模型可以请求调用的函数，由名称、描述和参数 schema 组成。",
+      "```python",
+      "from langchain_core.tools import tool",
+      "",
+      "@tool",
+      "def get_weather(city: str) -> str:",
+      "    \"\"\"Get the current weather for a city.\"\"\"",
+      "    return f\"{city}: sunny\"",
+      "```",
+      "- docstring 会作为工具描述发送给模型，决定模型何时以及如何调用，要写清楚。",
+      "- 参数的类型注解会生成参数 schema。"
+    ]},
+    {"id": "lc_w03_agents", "name": "Agent Loop", "description": "How an agent alternates between model calls and tool calls.", "notes": [
+      "## Agent 循环",
+      "- 模型收到消息后，要么直接回答，要么返回带 tool_calls 的 AIMessage。",
+      "- 模型本身不执行工具，由 agent 运行时执行，并把 ToolMessage 追加回对话。",
+      "- 重复上述过程，直到模型不再请求工具并给出最终回答。",
+      "## 注意",
+      "- 限制最大循环次数，避免死循环。",
+      "- 工具出错时返回清晰的错误信息，模型才有机会修正参数。"
+    ]}
+  ],
+  "questions": [
+    {"id": "lc_w03_tools_q002", "topicId": "lc_w03_tools", "type": "CODE_READING", "difficulty": "BEGINNER",
+      "title": "What does this code print?",
+      "codeSnippet": "@tool\ndef add(a: int, b: int) -> int:\n    \"\"\"Add two integers.\"\"\"\n    return a + b\n\nprint(add.name)\nprint(add.invoke({\"a\": 2, \"b\": 3}))",
+      "options": [{"id": "A", "text": "add, then 5"}, {"id": "B", "text": "add, then (2, 3)"}, {"id": "C", "text": "tool, then 5"}, {"id": "D", "text": "Add two integers., then 5"}],
+      "correctAnswer": ["A"], "explanation": "The tool name defaults to the function name, and invoke() takes a dict of arguments and returns the function result.",
+      "tags": ["Tools"], "technology": "LangChain", "apiVersion": "v1"},
+    {"id": "lc_w03_tools_q003", "topicId": "lc_w03_tools", "type": "CODE_COMPLETION", "difficulty": "BEGINNER",
+      "title": "Fill in the method that makes the model aware of the tools.",
+      "codeSnippet": "model_with_tools = model.______([add])\nai_msg = model_with_tools.invoke(\"What is 2 + 3?\")\nprint(ai_msg.tool_calls)",
+      "options": [{"id": "A", "text": "bind_tools"}, {"id": "B", "text": "with_tools"}, {"id": "C", "text": "add_tools"}, {"id": "D", "text": "register_tools"}],
+      "correctAnswer": ["A"], "explanation": "bind_tools attaches tool schemas to the model so it can return tool_calls in its AIMessage.",
+      "tags": ["bind_tools"], "technology": "LangChain", "apiVersion": "v1"},
+    {"id": "lc_w03_tools_q004", "topicId": "lc_w03_tools", "type": "MULTIPLE_CHOICE", "difficulty": "INTERMEDIATE",
+      "title": "Which parts of a tool definition are described to the model?",
+      "options": [{"id": "A", "text": "The tool name"}, {"id": "B", "text": "The tool description"}, {"id": "C", "text": "The argument schema"}, {"id": "D", "text": "The full source code of the function"}],
+      "correctAnswer": ["A", "B", "C"], "explanation": "The model only sees the name, description and argument schema. The implementation stays in your application.",
+      "tags": ["Tools", "Tool Calling"], "technology": "LangChain", "apiVersion": "v1"},
+    {"id": "lc_w03_agents_q002", "topicId": "lc_w03_agents", "type": "SINGLE_CHOICE", "difficulty": "BEGINNER",
+      "title": "Which message type carries a tool's result back to the model?",
+      "options": [{"id": "A", "text": "ToolMessage"}, {"id": "B", "text": "HumanMessage"}, {"id": "C", "text": "SystemMessage"}, {"id": "D", "text": "AIMessage"}],
+      "correctAnswer": ["A"], "explanation": "ToolMessage holds the output of a tool call and is linked to the request by tool_call_id.",
+      "tags": ["Messages", "Agent Loop"], "technology": "LangChain", "apiVersion": "v1"},
+    {"id": "lc_w03_agents_q003", "topicId": "lc_w03_agents", "type": "DEBUGGING", "difficulty": "INTERMEDIATE",
+      "title": "The final model call is rejected by the provider. What is wrong?",
+      "codeSnippet": "ai_msg = model_with_tools.invoke(messages)\nmessages.append(ai_msg)\nfor call in ai_msg.tool_calls:\n    result = tools[call[\"name\"]].invoke(call[\"args\"])\n    messages.append(ToolMessage(result))\nfinal = model_with_tools.invoke(messages)",
+      "options": [{"id": "A", "text": "The ToolMessage has no tool_call_id linking it to the request"}, {"id": "B", "text": "ai_msg must not be appended to messages"}, {"id": "C", "text": "A model cannot be invoked twice"}, {"id": "D", "text": "Tools cannot be stored in a dict"}],
+      "correctAnswer": ["A"], "explanation": "Use ToolMessage(content=result, tool_call_id=call[\"id\"]). The AI message with tool_calls must stay in the history.",
+      "tags": ["ToolMessage", "Debugging"], "technology": "LangChain", "apiVersion": "v1"},
+    {"id": "lc_w03_agents_q004", "topicId": "lc_w03_agents", "type": "SINGLE_CHOICE", "difficulty": "INTERMEDIATE",
+      "title": "Why should an agent loop have a maximum number of iterations?",
+      "options": [{"id": "A", "text": "To prevent endless loops and runaway cost when the model keeps requesting tools"}, {"id": "B", "text": "Because models can only call a tool once"}, {"id": "C", "text": "To make tool results more accurate"}, {"id": "D", "text": "Because ToolMessage expires"}],
+      "correctAnswer": ["A"], "explanation": "Without a limit a confused agent can loop indefinitely, consuming time and tokens.",
+      "tags": ["Agent Loop", "Reliability"], "technology": "LangChain", "apiVersion": "v1"},
+    {
+      "id": "lc_w03_tools_q001",
+      "topicId": "lc_w03_tools",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "BEGINNER",
+      "title": "Why does the docstring of a function decorated with @tool matter?",
+      "options": [
+        {"id": "A", "text": "It is only for human readers and is ignored by the framework"},
+        {"id": "B", "text": "It becomes the tool description the model uses to decide when and how to call the tool"},
+        {"id": "C", "text": "It is executed when the tool is called"},
+        {"id": "D", "text": "It defines the return type"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "The name, description and argument schema are sent to the model. A clear docstring improves tool selection.",
+      "tags": ["Tools"],
+      "technology": "LangChain",
+      "apiVersion": "v1"
+    },
+    {
+      "id": "lc_w03_agents_q001",
+      "topicId": "lc_w03_agents",
+      "type": "SINGLE_CHOICE",
+      "difficulty": "INTERMEDIATE",
+      "title": "When a model decides to use a tool, what actually happens?",
+      "options": [
+        {"id": "A", "text": "The model runs the Python function itself inside the provider"},
+        {"id": "B", "text": "The model returns an AIMessage with tool_calls; your application or agent runtime executes the tool and sends the result back"},
+        {"id": "C", "text": "The model downloads the function from LangSmith"},
+        {"id": "D", "text": "The conversation ends"}
+      ],
+      "correctAnswer": ["B"],
+      "explanation": "The model only requests a call by name and arguments. The runtime runs the tool and appends a ToolMessage so the model can continue.",
+      "tags": ["Tool Calling", "Agent Loop"],
+      "technology": "LangChain",
+      "apiVersion": "v1"
+    }
+  ]
+}
