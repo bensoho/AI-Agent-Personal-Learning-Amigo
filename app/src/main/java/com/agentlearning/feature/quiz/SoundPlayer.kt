@@ -11,6 +11,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.PI
+import kotlin.math.exp
 import kotlin.math.sin
 
 /** Plays short synthesized tones for right and wrong answers, so no audio assets are needed. */
@@ -19,7 +20,7 @@ class SoundPlayer @Inject constructor() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    private val correctTone = synth(listOf(Note(523.25, 90), Note(659.25, 90), Note(783.99, 180)), overtone = 0.0)
+    private val correctTone = synthBell()
     private val wrongTone = synth(listOf(Note(233.08, 140), Note(174.61, 260)), overtone = 0.35)
 
     fun play(correct: Boolean) {
@@ -60,6 +61,22 @@ class SoundPlayer @Inject constructor() {
             .also { it.write(pcm, 0, pcm.size) }
 
     private class Note(val frequency: Double, val millis: Int)
+
+    private fun synthBell(): ShortArray {
+        val samples = SAMPLE_RATE * 650 / 1000
+        val attack = SAMPLE_RATE * 2 / 1000
+        val fade = SAMPLE_RATE * FADE_MILLIS / 1000
+        return ShortArray(samples) { i ->
+            val t = i.toDouble() / SAMPLE_RATE
+            val phase = 2 * PI * 1567.98 * t
+            // Inharmonic partials decay faster than the ringing fundamental.
+            val wave = sin(phase) * exp(-7 * t) +
+                0.45 * sin(2.76 * phase) * exp(-13 * t) +
+                0.2 * sin(5.4 * phase) * exp(-22 * t)
+            val envelope = minOf(1.0, i.toDouble() / attack, (samples - 1 - i).toDouble() / fade)
+            (wave / 1.65 * envelope * VOLUME * Short.MAX_VALUE).toInt().toShort()
+        }
+    }
 
     private fun synth(notes: List<Note>, overtone: Double): ShortArray {
         val out = ArrayList<Short>()
