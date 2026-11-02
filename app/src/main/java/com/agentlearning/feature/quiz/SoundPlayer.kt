@@ -3,6 +3,7 @@ package com.agentlearning.feature.quiz
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
+import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -13,6 +14,7 @@ import javax.inject.Singleton
 import kotlin.math.PI
 import kotlin.math.exp
 import kotlin.math.sin
+import kotlin.time.Duration.Companion.milliseconds
 
 /** Plays short synthesized tones for right and wrong answers, so no audio assets are needed. */
 @Singleton
@@ -21,19 +23,26 @@ class SoundPlayer @Inject constructor() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     private val correctTone = synthBell()
-    private val wrongTone = synth(listOf(Note(233.08, 140), Note(174.61, 260)), overtone = 0.35)
+    private val wrongTone = synth(listOf(Note(233.08, 140), Note(174.61, 260)))
 
     fun play(correct: Boolean) {
         val pcm = if (correct) correctTone else wrongTone
         scope.launch {
             val track = try {
                 buildTrack(pcm)
-            } catch (e: Exception) {
+            } catch (e: IllegalArgumentException) {
+                Log.e(TAG, "Invalid answer sound configuration", e)
+                return@launch
+            } catch (e: UnsupportedOperationException) {
+                Log.e(TAG, "Answer sound playback is unavailable", e)
                 return@launch
             }
             try {
+                check(track.write(pcm, 0, pcm.size) == pcm.size) { "Failed to write answer sound samples" }
                 track.play()
-                delay(pcm.size * 1000L / SAMPLE_RATE + 120)
+                delay((pcm.size * 1000L / SAMPLE_RATE + 120).milliseconds)
+            } catch (e: IllegalStateException) {
+                Log.e(TAG, "Failed to play answer sound", e)
             } finally {
                 track.release()
             }
@@ -58,7 +67,6 @@ class SoundPlayer @Inject constructor() {
             .setBufferSizeInBytes(pcm.size * 2)
             .setTransferMode(AudioTrack.MODE_STATIC)
             .build()
-            .also { it.write(pcm, 0, pcm.size) }
 
     private class Note(val frequency: Double, val millis: Int)
 
@@ -78,25 +86,27 @@ class SoundPlayer @Inject constructor() {
         }
     }
 
-    private fun synth(notes: List<Note>, overtone: Double): ShortArray {
+    private fun synth(notes: List<Note>): ShortArray {
         val out = ArrayList<Short>()
         for (note in notes) {
             val samples = SAMPLE_RATE * note.millis / 1000
             val fade = SAMPLE_RATE * FADE_MILLIS / 1000
             for (i in 0 until samples) {
                 val t = i.toDouble() / SAMPLE_RATE
-                val wave = sin(2 * PI * note.frequency * t) + overtone * sin(4 * PI * note.frequency * t)
+                val wave = sin(2 * PI * note.frequency * t) + OVERTONE * sin(4 * PI * note.frequency * t)
                 // Short fades remove the click at note boundaries.
                 val envelope = minOf(1.0, i.toDouble() / fade, (samples - i).toDouble() / fade)
-                out += (wave / (1 + overtone) * envelope * VOLUME * Short.MAX_VALUE).toInt().toShort()
+                out += (wave / (1 + OVERTONE) * envelope * VOLUME * Short.MAX_VALUE).toInt().toShort()
             }
         }
         return out.toShortArray()
     }
 
     private companion object {
+        const val TAG = "SoundPlayer"
         const val SAMPLE_RATE = 44_100
         const val FADE_MILLIS = 8
         const val VOLUME = 0.45
+        const val OVERTONE = 0.35
     }
 }

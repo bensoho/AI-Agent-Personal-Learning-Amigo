@@ -205,9 +205,9 @@ private class ProcessTextToolbar(private val view: View) : TextToolbar {
         try {
             context.startActivity(intent)
         } catch (e: ActivityNotFoundException) {
-            // The handler was uninstalled between building the menu and the click.
+            Log.w(TAG, "Text processing activity is no longer available", e)
         } catch (e: SecurityException) {
-            // Some handlers reject callers at runtime; nothing useful to do.
+            Log.w(TAG, "Text processing activity denied access", e)
         }
     }
 

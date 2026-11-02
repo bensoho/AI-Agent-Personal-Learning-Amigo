@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flow
 import java.time.Clock
 import java.time.LocalDate
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Emits today's date immediately and again after each local midnight, so queries bound to
@@ -18,7 +19,7 @@ internal fun Clock.dayChanges(): Flow<LocalDate> {
             val today = LocalDate.now(clock)
             emit(today)
             val nextMidnight = today.plusDays(1).atStartOfDay(clock.zone).toInstant().toEpochMilli()
-            delay((nextMidnight - clock.millis()).coerceAtLeast(0) + MIDNIGHT_MARGIN_MILLIS)
+            delay(((nextMidnight - clock.millis()).coerceAtLeast(0) + MIDNIGHT_MARGIN_MILLIS).milliseconds)
         }
     }.distinctUntilChanged()
 }

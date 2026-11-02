@@ -19,6 +19,8 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 
 @HiltViewModel
 class KnowledgeViewModel @Inject constructor(
@@ -41,7 +43,7 @@ class KnowledgeViewModel @Inject constructor(
     val filterQuery: StateFlow<String> = _query
         .map { it.trim() }
         .distinctUntilChanged()
-        .debounce { if (it.isEmpty()) 0L else 200L }
+        .debounce { if (it.isEmpty()) Duration.ZERO else 200.milliseconds }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
 
     val courses: StateFlow<List<CourseOutline>> =

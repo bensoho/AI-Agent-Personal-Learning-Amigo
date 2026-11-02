@@ -13,12 +13,14 @@ import com.agentlearning.domain.repository.StudyRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.Clock
 import javax.inject.Inject
 import kotlin.random.Random
@@ -251,10 +253,12 @@ class QuizViewModel @Inject constructor(
         val id = sessionId ?: return
         if (sessionClosed) return
         sessionClosed = true
-        // NonCancellable: viewModelScope is cancelled as soon as the screen leaves the back stack.
-        viewModelScope.launch(NonCancellable) {
-            runCatching { study.finishSession(id) }
-                .onFailure { Log.e("QuizViewModel", "Failed to finish study session $id", it) }
+        // Enter cleanup before navigation can cancel the scope, without detaching the child job.
+        viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            withContext(NonCancellable) {
+                runCatching { study.finishSession(id) }
+                    .onFailure { Log.e("QuizViewModel", "Failed to finish study session $id", it) }
+            }
         }
     }
 

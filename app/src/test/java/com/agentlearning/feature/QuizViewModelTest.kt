@@ -18,6 +18,7 @@ import com.agentlearning.feature.quiz.SoundPlayer
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
@@ -256,6 +257,46 @@ class QuizViewModelTest {
         assertTrue(restored.state.value.finished)
     }
 
+    @Test
+    fun exit_finishesSessionOnceEvenIfScopeIsCanceledBeforeDispatch() = runTest {
+        val study = FakeStudy(questions)
+        val gate = CompletableDeferred<Unit>()
+        study.finishGate = gate
+        val model = create(study)
+        advanceUntilIdle()
+
+        model.onExit()
+        model.onExit()
+        val parent = checkNotNull(model.viewModelScope.coroutineContext[Job])
+        parent.cancel()
+        advanceUntilIdle()
+
+        assertEquals(1, study.finishCalls)
+        assertTrue(study.finished.isEmpty())
+        assertFalse(parent.isCompleted)
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(listOf(1L), study.finished)
+        assertTrue(parent.isCompleted)
+    }
+
+    @Test
+    fun exit_doesNotFinishAnAlreadyClosedSessionAgain() = runTest {
+        val study = FakeStudy(questions.take(1))
+        val model = create(study)
+        advanceUntilIdle()
+        model.toggleOption("A")
+        model.submit()
+        advanceUntilIdle()
+
+        model.onExit()
+        advanceUntilIdle()
+
+        assertEquals(1, study.finishCalls)
+        assertEquals(listOf(1L), study.finished)
+    }
+
     private class FakeStudy(private val questions: List<Question>) : StudyRepository {
         val modes = mutableListOf<StudyMode>()
         val finished = mutableListOf<Long>()
@@ -266,6 +307,7 @@ class QuizViewModelTest {
         var failRecord = false
         var failFinish = false
         var recordGate: CompletableDeferred<Unit>? = null
+        var finishGate: CompletableDeferred<Unit>? = null
 
         override fun observeQuestions(filter: ReviewFilter): Flow<List<Question>> = flowOf(questions)
         override fun observeReviewMeta(): Flow<List<ReviewMeta>> = flowOf(emptyList())
@@ -281,6 +323,7 @@ class QuizViewModelTest {
         }
         override suspend fun finishSession(sessionId: Long) {
             finishCalls++
+            finishGate?.await()
             if (failFinish) {
                 failFinish = false
                 error("finish failed")
